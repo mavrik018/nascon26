@@ -1,0 +1,23 @@
+# Secrets: DAY1_SALT and friends live only in the local environment.
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.coverage
+htmlcov/
+reports/
+
+# Flutter / Android (release APK under mobile/release/ IS committed)
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins*
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/app/debug/
+mobile/android/key.properties
+*.iml
+.idea/

@@ -1,0 +1,7 @@
+# LF everywhere: Linux containers break on CRLF scripts.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.pdf binary
+*.apk binary
+*.jar binary

@@ -1,0 +1,42 @@
+# Start: docker compose up -d --build --wait   ->  API on http://localhost:8080
+# Every value has a default so a clean clone runs with no .env file.
+# DAY1_SALT is passed through from the environment only; it is never stored here.
+
+name: league
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-league}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-league-local-only}
+      POSTGRES_DB: ${POSTGRES_DB:-league}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # -h 127.0.0.1 forces TCP so the temporary init server does not count as ready.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build: ./api
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-league}:${POSTGRES_PASSWORD:-league-local-only}@db:5432/${POSTGRES_DB:-league}
+      DAY1_SALT: ${DAY1_SALT:-}
+      JWT_SECRET: ${JWT_SECRET:-change-me-local-only}
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+volumes:
+  pgdata:
