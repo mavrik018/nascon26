@@ -440,6 +440,62 @@ def list_products(user: dict = Depends(current_user)):
     return [{**p, "variants": by_product.get(p["product_id"], [])} for p in products]
 
 
+MANAGER_ROLES = ("super_admin", "club_manager")
+
+
+@router.post("/api/v1/store/products", status_code=201)
+async def create_product(request: Request, user: dict = Depends(current_user)):
+    """Store management (club manager of the tenant, or platform admin): add a product
+    with its variants. Buyers cannot create products."""
+    if user.get("role") not in MANAGER_ROLES:
+        raise ApiError(403, "FORBIDDEN", "Only club managers and admins can add merchandise")
+    body = await read_json(request)
+    if not isinstance(body, dict):
+        raise validation("body")
+    bad = []
+    name = body.get("name")
+    if not isinstance(name, str) or not name.strip() or len(name) > 120:
+        bad.append("name")
+    category = body.get("category", "apparel")
+    if not isinstance(category, str) or not category.strip() or len(category) > 40:
+        bad.append("category")
+    description = body.get("description", "")
+    if not isinstance(description, str) or len(description) > 1000:
+        bad.append("description")
+    variants = body.get("variants")
+    if not isinstance(variants, list) or not 1 <= len(variants) <= 20:
+        bad.append("variants")
+    else:
+        for v in variants:
+            if not (isinstance(v, dict) and isinstance(v.get("label"), str) and v["label"].strip()
+                    and is_int(v.get("price_minor"), 0) and is_int(v.get("stock"), 0)):
+                bad.append("variants")
+                break
+    tenant_id = body.get("tenant_id") if user.get("role") == "super_admin" else user.get("tenant_id")
+    if not isinstance(tenant_id, str) or not tenant_id:
+        tenant_id = "tenant-alpha" if user.get("role") == "super_admin" else None
+        if tenant_id is None:
+            bad.append("tenant_id")
+    if bad:
+        raise validation(bad, "Invalid product")
+    import time
+    product_id = f"prod-{int(time.time() * 1000)}"
+    with pool.connection() as conn:
+        conn.execute("INSERT INTO store_products (product_id, tenant_id, name, category, description)"
+                     " VALUES (%s, %s, %s, %s, %s)", (product_id, tenant_id, name.strip(), category.strip(), description))
+        for i, v in enumerate(variants):
+            conn.execute(
+                "INSERT INTO store_variants (variant_id, product_id, position, label, size, color, price_minor, stock)"
+                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (f"{product_id}-v{i + 1}", product_id, i, v["label"].strip(), v.get("size"), v.get("color"),
+                 v["price_minor"], v["stock"]))
+    return {"product_id": product_id, "tenant_id": tenant_id, "name": name.strip(), "category": category.strip(),
+            "description": description,
+            "variants": [{"variant_id": f"{product_id}-v{i + 1}", "label": v["label"].strip(), "size": v.get("size"),
+                          "color": v.get("color"), "price_minor": v["price_minor"], "currency": "PKR",
+                          "stock": v["stock"]} for i, v in enumerate(variants)]}
+
+
 @router.post("/api/v1/store/checkout")
 async def store_checkout(request: Request, user: dict = Depends(current_user)):
     body = await read_json(request)

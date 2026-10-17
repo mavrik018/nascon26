@@ -480,3 +480,22 @@ def test_pdf_generation_is_fast():
     raw = receipt_pdf(payload, "a" * 64)
     assert time.perf_counter() - start < 0.5
     assert raw.startswith(b"%PDF")
+
+
+def _login(api, who):
+    r = api.post("/api/v1/auth/login", json={"email": f"{who}@nascon.test", "password": "Nascon@26"})
+    return {"Authorization": f"Bearer {r.json()['token']}"}
+
+
+def test_manager_adds_product_and_buyers_cannot(api):
+    api.reset()
+    body = {"name": "Alpha Scarf", "category": "accessories", "description": "Warm",
+            "variants": [{"label": "One size", "price_minor": 150000, "stock": 12}]}
+    r = api.post("/api/v1/store/products", json=body, headers=_login(api, "manager"))
+    assert r.status_code == 201 and r.json()["tenant_id"] == "tenant-alpha"
+    pid = r.json()["product_id"]
+    listed = api.get("/api/v1/store/products", headers=_login(api, "player")).json()
+    assert any(p["product_id"] == pid and p["variants"][0]["stock"] == 12 for p in listed)
+    assert api.post("/api/v1/store/products", json=body, headers=_login(api, "player")).status_code == 403
+    assert api.post("/api/v1/store/products", json={**body, "variants": []},
+                    headers=_login(api, "admin")).status_code == 400

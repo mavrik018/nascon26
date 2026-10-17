@@ -223,6 +223,13 @@ class _ShopPageState extends State<ShopPage> {
     builder: (context, _) => RefreshIndicator(onRefresh: _load, child: _page(context)),
   );
 
+  Future<void> _addProduct(BuildContext context) async {
+    final added = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => AddProductPage(state: widget.state)),
+    );
+    if (added == true) await _load();
+  }
+
   Widget _page(BuildContext context) {
     final categories = ['All', ...{for (final p in products) p.category}];
     if (!categories.contains(category)) category = 'All';
@@ -242,9 +249,40 @@ class _ShopPageState extends State<ShopPage> {
           onPressed: loading ? null : _load,
           icon: const Icon(Icons.refresh, color: Colors.white),
         ),
-        _cartButton(context, widget.state),
+        if (isStoreManager(widget.state))
+          IconButton(
+            tooltip: 'Add merchandise',
+            onPressed: () => _addProduct(context),
+            icon: const Icon(Icons.add_box_outlined, color: Colors.white),
+          )
+        else
+          _cartButton(context, widget.state),
       ],
       children: [
+        if (isStoreManager(widget.state))
+          GlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Store manager',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: ink)),
+                const SizedBox(height: 4),
+                const Text('You manage this catalogue. Fans and players buy; you add products and watch stock.',
+                    style: TextStyle(color: muted)),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    key: const Key('add-product'),
+                    style: FilledButton.styleFrom(minimumSize: const Size(48, 52)),
+                    onPressed: () => _addProduct(context),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add merchandise'),
+                  ),
+                ),
+              ],
+            ),
+          ),
         GlassCard(
           opacity: .25,
           child: Row(
@@ -774,6 +812,10 @@ class _ProductPageState extends State<ProductPage> {
                 ],
               ),
               const SizedBox(height: 16),
+              if (isStoreManager(widget.state))
+                Text('Stock on hand: ${v?.stock ?? 0}. Buyers (players and fans) purchase this item.',
+                    style: const TextStyle(color: muted, fontWeight: FontWeight.w600))
+              else
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
@@ -1353,4 +1395,141 @@ class _ReceiptPageState extends State<ReceiptPage> {
     final unit = asInt(item['unit_price_minor']);
     return DetailRow('${widget.itemNames[id] ?? humanize(id)} × $qty', _price(unit * qty, cur));
   }
+}
+
+
+/// Admins and club managers run the store; everyone else shops.
+bool isStoreManager(AppState state) => const {'super_admin', 'club_manager'}.contains(state.user?.role);
+
+/// Store management: add a product with one option (club manager / admin only).
+class AddProductPage extends StatefulWidget {
+  const AddProductPage({super.key, required this.state});
+  final AppState state;
+
+  @override
+  State<AddProductPage> createState() => _AddProductPageState();
+}
+
+class _AddProductPageState extends State<AddProductPage> {
+  final _form = GlobalKey<FormState>();
+  final _name = TextEditingController();
+  final _description = TextEditingController();
+  final _variant = TextEditingController(text: 'One size');
+  final _price = TextEditingController();
+  final _stock = TextEditingController(text: '10');
+  String _category = 'apparel';
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    for (final c in [_name, _description, _variant, _price, _stock]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_form.currentState!.validate()) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.state.api.post('/api/v1/store/products', {
+        'name': _name.text.trim(),
+        'category': _category,
+        'description': _description.text.trim(),
+        'variants': [
+          {
+            'label': _variant.text.trim(),
+            'price_minor': (double.parse(_price.text.trim()) * 100).round(),
+            'stock': int.parse(_stock.text.trim()),
+          },
+        ],
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${_name.text.trim()} added to the store')));
+      Navigator.of(context).pop(true);
+    } on ApiException catch (e) {
+      setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  String? _required(String? v) => (v == null || v.trim().isEmpty) ? 'Required' : null;
+
+  @override
+  Widget build(BuildContext context) => OceanPage(
+    title: 'Add merchandise',
+    children: [
+      GlassCard(
+        child: Form(
+          key: _form,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(_error!, style: const TextStyle(color: Color(0xFFB3261E))),
+                ),
+              TextFormField(
+                controller: _name,
+                decoration: const InputDecoration(labelText: 'Product name'),
+                validator: _required,
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _category,
+                decoration: const InputDecoration(labelText: 'Category'),
+                items: const [
+                  DropdownMenuItem(value: 'apparel', child: Text('Apparel')),
+                  DropdownMenuItem(value: 'accessories', child: Text('Accessories')),
+                  DropdownMenuItem(value: 'digital', child: Text('Digital')),
+                ],
+                onChanged: (v) => setState(() => _category = v ?? 'apparel'),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _description,
+                maxLines: 2,
+                decoration: const InputDecoration(labelText: 'Description (optional)'),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _variant,
+                decoration: const InputDecoration(labelText: 'Option (size / colour)'),
+                validator: _required,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _price,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Price (PKR)', hintText: 'e.g. 4500'),
+                validator: (v) => (double.tryParse((v ?? '').trim()) ?? -1) < 0 ? 'Enter a price in PKR' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _stock,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Units in stock'),
+                validator: (v) => (int.tryParse((v ?? '').trim()) ?? -1) < 0 ? 'Enter a whole number' : null,
+              ),
+              const SizedBox(height: 20),
+              FilledButton(
+                key: const Key('save-product'),
+                style: FilledButton.styleFrom(minimumSize: const Size(48, 56)),
+                onPressed: _saving ? null : _save,
+                child: _saving
+                    ? const SizedBox.square(dimension: 22, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Add to store'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ],
+  );
 }
