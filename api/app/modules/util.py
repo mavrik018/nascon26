@@ -6,8 +6,8 @@ from fastapi import Request
 
 from ..errors import validation
 
-ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
-DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}\Z")
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}\Z")
 
 
 async def read_json(request: Request):

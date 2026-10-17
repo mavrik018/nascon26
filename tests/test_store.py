@@ -164,13 +164,14 @@ def test_same_order_id_different_body_conflicts(api):
     assert inv(api, M)["stock"] == 4
 
 
-def test_failed_order_id_can_be_retried(api):
+def test_failed_order_id_identical_retry_reruns_but_different_body_is_409(api):
     api.reset(stock={M: 1})
     err(api.post("/audit/v1/checkout", json=order(token="tok_declined")), 402, "PAYMENT_DECLINED")
     err(api.post("/audit/v1/checkout", json=order(token="tok_declined")), 402, "PAYMENT_DECLINED")
-    r = api.post("/audit/v1/checkout", json=order(token="tok_success"))
+    # spec 5.12: same id + different body -> 409, even after a failed attempt
+    err(api.post("/audit/v1/checkout", json=order(token="tok_success")), 409, "DUPLICATE_ORDER_ID")
+    r = api.post("/audit/v1/checkout", json=order(order_id="ord-retry", token="tok_success"))
     assert r.status_code == 201
-    assert api.post("/audit/v1/checkout", json=order(token="tok_success")).status_code == 200
 
 
 @pytest.mark.in_process

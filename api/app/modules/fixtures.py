@@ -56,6 +56,8 @@ def generate(body) -> dict:
         bad.append("params")
     if bad:
         raise validation(bad)
+    # An explicit null for an optional parameter means "use the default".
+    params = {k: v for k, v in params.items() if v is not None}
     return GENERATORS[fmt](list(teams), params)
 
 

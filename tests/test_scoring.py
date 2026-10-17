@@ -223,7 +223,8 @@ def test_round_model_series_decided(api):
     assert ev(api, "r2", "m1", "score", {"team_id": "t1", "event_type": "round_win"}).status_code == 201
     r = ev(api, "r3", "m1", "score", {"team_id": "t1", "event_type": "round_win"})
     assert r.status_code == 409 and code(r) == "SERIES_ALREADY_DECIDED"
-    assert ev(api, "r4", "m1", "score", {"team_id": "t2", "event_type": "round_win"}).status_code == 201
+    r = ev(api, "r4", "m1", "score", {"team_id": "t2", "event_type": "round_win"})
+    assert r.status_code == 409 and code(r) == "SERIES_ALREADY_DECIDED"   # decided for both teams
 
 
 def test_mystery_sport_end_to_end(api):

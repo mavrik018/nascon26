@@ -121,7 +121,7 @@ def _validate_league(body) -> dict:
     bad = []
     if not is_id(body.get("league_id")):
         bad.append("league_id")
-    if not isinstance(body.get("sport_id"), str) or not body.get("sport_id"):
+    if not is_id(body.get("sport_id")):
         bad.append("sport_id")
     teams = body.get("teams")
     if not (isinstance(teams, list) and 2 <= len(teams) <= 40 and all(is_id(t) for t in teams)
@@ -135,7 +135,7 @@ def _validate_league(body) -> dict:
         seen = set()
         for f in fixtures:
             ok = (isinstance(f, dict) and is_id(f.get("match_id")) and is_id(f.get("home")) and is_id(f.get("away"))
-                  and f["home"] != f["away"] and f["match_id"] not in seen
+                  and f["home"] != f["away"]
                   and (teams is None or (f["home"] in teams and f["away"] in teams)))
             if not ok:
                 bad.append("fixtures")
@@ -165,13 +165,16 @@ def register_league(conn, body, tenant_id: str | None = None, name: str | None =
     if conn.execute("SELECT 1 FROM scoring_leagues WHERE league_id = %s", (body["league_id"],)).fetchone():
         raise conflict("LEAGUE_EXISTS", f"League {body['league_id']} already exists", league_id=body["league_id"])
     ids = [f["match_id"] for f in body["fixtures"]]
+    repeated = sorted({i for i in ids if ids.count(i) > 1})
+    if repeated:
+        raise conflict("MATCH_EXISTS", f"Match {repeated[0]} is listed twice", match_id=repeated[0])
     if ids:
         taken = conn.execute("SELECT match_id FROM scoring_matches WHERE match_id = ANY(%s) ORDER BY match_id",
                              (ids,)).fetchone()
         if taken:
             raise conflict("MATCH_EXISTS", f"Match {taken['match_id']} already exists", match_id=taken["match_id"])
     points = {**DEFAULT_POINTS, **{k: v for k, v in (body.get("points") or {}).items() if k in DEFAULT_POINTS}}
-    order = body.get("tie_break_order") or sport.get("tie_break_order") or sports.TIE_BREAKS
+    order = body["tie_break_order"] if body.get("tie_break_order") is not None         else (sport.get("tie_break_order") or sports.TIE_BREAKS)
     lots_seed = body.get("lots_seed")
     if lots_seed is None:
         from .core import current_seed_conn
@@ -213,6 +216,8 @@ def _validate_event(body) -> dict:
         for f in ("sport_id", "home_team_id", "away_team_id"):
             if not isinstance(p.get(f), str) or not p.get(f):
                 bad.append(f"payload.{f}")
+        if not bad and not is_id(p["sport_id"]):
+            bad.append("payload.sport_id")
         if not bad and (not is_id(p["home_team_id"]) or not is_id(p["away_team_id"])
                         or p["home_team_id"] == p["away_team_id"]):
             bad.append("payload.away_team_id")
@@ -330,7 +335,8 @@ def _check_model_limits(sport: dict, state: dict, team_id: str) -> None:
         if team["balls"] >= max_balls or team["wickets"] >= max_wickets:
             raise conflict("INNINGS_COMPLETE", "This team's innings is complete", team_id=team_id)
     elif model == "round":
-        if team["score"] >= (periods["best_of"] + 1) // 2:
+        # Spec 5.9: once ANY team has won the majority, the series is over for both teams.
+        if any(t["score"] >= (periods["best_of"] + 1) // 2 for t in state["teams"].values()):
             raise conflict("SERIES_ALREADY_DECIDED", "The series is already decided", team_id=team_id)
 
 

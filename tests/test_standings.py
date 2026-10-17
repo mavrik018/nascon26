@@ -162,7 +162,7 @@ def test_undecided_and_unfinished_matches_do_not_count(api):
 def test_round_model_map_differential(api):
     api.reset()
     register(api, sport="esports", teams=("t1", "t2"), fixtures=[("a", "t1", "t2")], qualification={"spots": 1})
-    play(api, "a", 2, 1, "t1", "t2", event_type="round_win")
+    play(api, "a", 1, 2, "t2", "t1", event_type="round_win")  # t2 wins a map, then t1 wins two
     s = table(api)
     assert s["table"][0]["diff"] == 1 and s["table"][1]["diff"] == -1
 

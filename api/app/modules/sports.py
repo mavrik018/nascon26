@@ -22,8 +22,8 @@ CREATE TABLE IF NOT EXISTS sports (
 
 TIE_BREAKS = ["h2h_points", "h2h_diff", "overall_diff", "scored", "fair_play", "draw_lots"]
 OVERTIME_POLICIES = {"none", "extra_time", "shootout", "golden_score", "super_over"}
-SPORT_ID_RE = re.compile(r"^[a-z0-9_-]{2,40}$")
-EVENT_KEY_RE = re.compile(r"^[a-z0-9_]{1,40}$")
+SPORT_ID_RE = re.compile(r"^[a-z0-9_-]{2,40}\Z")
+EVENT_KEY_RE = re.compile(r"^[a-z0-9_]{1,40}\Z")
 
 BASELINE_SPORTS = [
     {"sport_id": "football", "name": "Football", "scoring_model": "event",

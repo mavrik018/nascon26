@@ -10,7 +10,7 @@ from . import errors
 from .db import pool
 from .modules import MODULES, core
 
-MAX_BODY_BYTES = 1024 * 1024  # spec 5.2: bodies over 1 MB -> 413
+MAX_BODY_BYTES = 1_000_000  # spec 5.2: bodies over 1 MB -> 413 (decimal MB: the stricter reading)
 
 
 @asynccontextmanager
@@ -59,5 +59,4 @@ def health(response: Response):
     """200 only when the database is reachable and the baseline is seeded (spec 5.4)."""
     if core.is_ready():
         return {"status": "ok"}
-    response.status_code = 503
-    return {"status": "unavailable"}
+    return errors.envelope(503, "SERVICE_UNAVAILABLE", "Database not reachable or baseline not seeded")

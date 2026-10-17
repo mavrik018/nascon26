@@ -240,7 +240,10 @@ def _claim(conn, order: dict) -> tuple[str, dict | None]:
                             (order["order_id"],)).fetchone()
     if existing is None:  # pragma: no cover - removed by a concurrent reset; caller retries
         return "wait", None
-    if existing["status"] == "cancelled":  # failed attempts free the id for a retry
+    if existing["request"] != fingerprint:  # spec 5.12: same id, different body -> 409, even after a failure
+        raise conflict("DUPLICATE_ORDER_ID", f"Order {order['order_id']} already exists with a different body",
+                       order_id=order["order_id"])
+    if existing["status"] == "cancelled":  # an identical retry of a failed attempt runs again
         conn.execute("UPDATE store_orders SET status = 'pending', customer_id = %s, request = %s, "
                      "error_code = NULL, updated_at = now() WHERE order_id = %s",
                      (order["customer_id"], Jsonb(fingerprint), order["order_id"]))
