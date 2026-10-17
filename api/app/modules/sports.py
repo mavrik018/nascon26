@@ -2,9 +2,10 @@
 sport id or event name; scoring reads `scoring_model` + `scoring_events`."""
 import re
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from psycopg.types.json import Jsonb
 
+from .. import auth
 from ..db import pool
 from ..errors import ApiError, not_found, validation
 from .util import read_json
@@ -181,3 +182,32 @@ async def create_sport(request: Request):
         raise ApiError(409, "SPORT_EXISTS", f"Sport {config['sport_id']} already exists",
                        {"sport_id": config["sport_id"]})
     return {"sport_id": config["sport_id"], "status": "created", "config": config}
+
+
+# --------------------------------------------------------------------------- mobile routes
+
+def _insert_sport(config: dict) -> dict:
+    with pool.connection() as conn:
+        inserted = conn.execute(
+            "INSERT INTO sports (sport_id, config) VALUES (%s, %s) ON CONFLICT (sport_id) DO NOTHING RETURNING sport_id",
+            (config["sport_id"], Jsonb(config)),
+        ).fetchone()
+    if not inserted:
+        raise ApiError(409, "SPORT_EXISTS", f"Sport {config['sport_id']} already exists",
+                       {"sport_id": config["sport_id"]})
+    return {"sport_id": config["sport_id"], "status": "created", "config": config}
+
+
+@router.get("/api/v1/sports")
+def list_sports(user: dict = Depends(auth.current_user)):
+    with pool.connection() as conn:
+        rows = conn.execute("SELECT config, baseline FROM sports ORDER BY baseline DESC, sport_id").fetchall()
+    return [{**r["config"], "baseline": r["baseline"]} for r in rows]
+
+
+@router.post("/api/v1/sports", status_code=201)
+async def create_sport_mobile(request: Request, user: dict = Depends(auth.current_user)):
+    """Add a sport from the app (platform admin / league organizer): same JSON rules as 5.6."""
+    if user.get("role") not in ("super_admin", "league_organizer"):
+        raise auth.forbidden("Only admins and league organizers can add sports")
+    return _insert_sport(validate_sport(await read_json(request)))

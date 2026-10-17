@@ -144,3 +144,19 @@ def test_mobile_sync_enforces_roles(api):
     assert out["results"][0]["resolution"] == "appended"   # m04 has 2 events: base 2 == server version
     assert out["results"][1]["error_code"] == "FORBIDDEN"
     assert api.post("/api/v1/sync", json=body).status_code == 401
+
+
+def test_sports_list_and_role_based_create(api):
+    api.reset()
+    listed = api.get("/api/v1/sports", headers=login(api, "viewer")).json()
+    assert [s["sport_id"] for s in listed][:4] == ["basketball", "cricket", "esports", "football"]
+    body = {"sport_id": "netball", "name": "Netball", "scoring_model": "event",
+            "periods": {"count": 4, "duration_minutes": 15}, "scoring_events": {"goal": {"points": 1}},
+            "draw_allowed": True, "overtime": {"policy": "none"},
+            "roster": {"min_squad_size": 7, "max_squad_size": 12, "required_positions": {}}}
+    assert api.post("/api/v1/sports", json=body, headers=login(api, "player")).status_code == 403
+    r = api.post("/api/v1/sports", json=body, headers=login(api, "organizer"))
+    assert r.status_code == 201 and r.json()["config"]["tie_break_order"][-1] == "draw_lots"
+    assert api.post("/api/v1/sports", json=body, headers=login(api, "admin")).status_code == 409
+    assert api.post("/api/v1/sports", json={**body, "sport_id": "Bad Id"},
+                    headers=login(api, "admin")).status_code == 400

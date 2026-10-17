@@ -10,6 +10,7 @@ import '../core/format.dart';
 import '../core/models.dart';
 import 'club_screens.dart' show plainError;
 import 'ocean_widgets.dart';
+import 'sport_screens.dart';
 
 const _amber = Color(0xFF92621C);
 const _danger = Color(0xFFB3261E);
@@ -233,6 +234,15 @@ class ProfilePage extends StatelessWidget {
                 ),
 
                 onTap: () => openPage(context, SyncPage(state: state)),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                key: const Key('open-sports'),
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.sports, color: ocean),
+                title: const Text('Sports'),
+                subtitle: Text(canAddSport(state) ? 'View and add sports (no code change)' : 'Sports in this platform'),
+                onTap: () => openPage(context, SportsPage(state: state)),
               ),
               const Divider(height: 1),
               ListTile(
