@@ -21,3 +21,8 @@ mobile/android/app/debug/
 mobile/android/key.properties
 *.iml
 .idea/
+
+# Never commit API keys / design-tool credentials
+stitch-api-key.txt
+*api-key*.txt
+*.key
