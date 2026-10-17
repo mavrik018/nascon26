@@ -286,6 +286,7 @@ def test_login_malformed_400(api, raw):
     assert r.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
+@pytest.mark.in_process
 def test_password_hashes_not_plaintext():
     from app.db import pool
     with pool.connection() as conn:
@@ -338,6 +339,7 @@ def test_leagues_visibility(api, matrix):
 
 # --------------------------------------------------------------------- can() helper
 
+@pytest.mark.in_process
 def test_can_helper_for_other_modules(matrix):
     from app.db import pool
     t = {role: auth.decode_token(tok) for role, tok in matrix["tokens"].items()}
@@ -365,6 +367,7 @@ def test_unknown_scope_never_matches():
     assert not rbac._scope_matches("galaxy", {"tenant_id": "t"}, {"tenant_id": "t"})
 
 
+@pytest.mark.in_process
 def test_policy_matrix_lives_in_db(api, matrix):
     """Changing a policy row changes the decision: the matrix is data, not code."""
     from app.db import pool
@@ -378,6 +381,7 @@ def test_policy_matrix_lives_in_db(api, matrix):
     assert api.get("/audit/v1/rbac/clubs/club-alpha-1", headers=bearer(tok)).status_code == 200
 
 
+@pytest.mark.in_process
 def test_reset_is_repeatable(api):
     from app.db import pool
 
@@ -446,6 +450,7 @@ def test_rate_limit_over_http(api):
     assert api.post("/audit/v1/rbac-matrix").status_code == 200
 
 
+@pytest.mark.in_process
 def test_rate_limit_uses_injected_clock(api, monkeypatch):
     clock = [5000.0]
     monkeypatch.setattr(rbac, "_clock", lambda: clock[0])

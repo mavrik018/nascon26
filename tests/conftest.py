@@ -75,6 +75,15 @@ def _wait_http(base_url: str, seconds: float = 120) -> None:
     pytest.fail(f"API at {base_url} not healthy within {seconds}s")
 
 
+def pytest_collection_modifyitems(config, items):
+    """White-box tests call module functions directly; they only make sense in-process."""
+    if API_URL:
+        skip = pytest.mark.skip(reason="in-process only (calls Python functions directly)")
+        for item in items:
+            if "in_process" in item.keywords:
+                item.add_marker(skip)
+
+
 @pytest.fixture(scope="session")
 def api():
     if API_URL:

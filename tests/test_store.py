@@ -173,6 +173,7 @@ def test_failed_order_id_can_be_retried(api):
     assert api.post("/audit/v1/checkout", json=order(token="tok_success")).status_code == 200
 
 
+@pytest.mark.in_process
 def test_in_flight_twin_times_out_as_duplicate(api, monkeypatch):
     from app.db import pool
     from app.modules import store
@@ -304,6 +305,7 @@ def test_missing_discount_code_key_is_null(api):
     assert api.post("/audit/v1/checkout", json=body).status_code == 201
 
 
+@pytest.mark.in_process
 def test_unexpected_failure_after_reserve_releases_stock(api, monkeypatch):
     from app.modules import store
 
@@ -340,6 +342,7 @@ def test_twenty_buyers_last_unit(api):
     assert inv(api, M) == {"variant_id": M, "stock": 0, "reserved": 0}
 
 
+@pytest.mark.in_process
 def test_concurrent_direct_calls_never_oversell(api):
     """Same burst against the pipeline function itself, with larger stock and mixed outcomes."""
     from app.errors import ApiError
@@ -392,6 +395,7 @@ def test_concurrent_identical_replays_charge_once(api):
 
 # --------------------------------------------------------------------------- domain events (internal queue)
 
+@pytest.mark.in_process
 def test_domain_events_emitted(api):
     from app.db import pool
     api.reset(stock={M: 1})

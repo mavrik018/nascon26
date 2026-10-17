@@ -527,6 +527,7 @@ def test_player_of_other_league_not_in_squad(api):
 
 # --------------------------------------------------------------------------- reuse by offline sync
 
+@pytest.mark.in_process
 def test_apply_transfer_and_player_version_direct(api):
     from app.db import pool
     from app.errors import ApiError
