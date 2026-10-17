@@ -507,6 +507,7 @@ def _status(api, order_id, status, who="manager"):
     return api.post(f"/api/v1/store/orders/{order_id}/status", json={"status": status}, headers=_login(api, who))
 
 
+@pytest.mark.in_process
 def test_order_lifecycle_happy_path_and_events(api):
     api.reset()
     assert api.post("/audit/v1/checkout", json=order(order_id="ord-lc-1")).status_code == 201
