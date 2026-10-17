@@ -507,6 +507,38 @@ def match_detail(match_id: str, user: dict = Depends(auth.current_user)):
     return result
 
 
+@router.get("/api/v1/matches/{match_id}/stream")
+async def match_stream(match_id: str, request: Request, user: dict = Depends(auth.current_user)):
+    """Realtime layer (SSE): pushes the full projection whenever the match's event log grows,
+    i.e. on every score, status change or compensation. Clients that cannot keep a stream
+    open can poll GET /api/v1/matches/{id} instead."""
+    import asyncio
+    import json
+
+    from fastapi.responses import StreamingResponse
+    from starlette.concurrency import run_in_threadpool
+
+    def snapshot():
+        with pool.connection() as conn:
+            return project(conn, match_id)
+
+    first = await run_in_threadpool(snapshot)  # 404 before the stream starts
+
+    async def events():
+        last, current = None, first
+        while not await request.is_disconnected():
+            if current["version"] != last:
+                last = current["version"]
+                yield f"event: match\ndata: {json.dumps(current)}\n\n"
+            else:
+                yield ": keep-alive\n\n"
+            await asyncio.sleep(1)
+            current = await run_in_threadpool(snapshot)
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 def can_score(user: dict, league_id: str | None) -> bool:
     return user["role"] == "super_admin" or (
         user["role"] == "league_organizer" and league_id is not None and user.get("league_id") == league_id)
