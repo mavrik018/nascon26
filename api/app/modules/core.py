@@ -53,7 +53,11 @@ def bootstrap() -> None:
 
 def current_seed() -> int:
     with pool.connection() as conn:
-        row = conn.execute("SELECT value FROM app_state WHERE key = 'seed'").fetchone()
+        return current_seed_conn(conn)
+
+
+def current_seed_conn(conn) -> int:
+    row = conn.execute("SELECT value FROM app_state WHERE key = 'seed'").fetchone()
     return int(row["value"]) if row else 42
 
 
