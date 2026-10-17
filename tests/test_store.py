@@ -499,3 +499,65 @@ def test_manager_adds_product_and_buyers_cannot(api):
     assert api.post("/api/v1/store/products", json=body, headers=_login(api, "player")).status_code == 403
     assert api.post("/api/v1/store/products", json={**body, "variants": []},
                     headers=_login(api, "admin")).status_code == 400
+
+
+# --------------------------------------------------------------------------- order lifecycle (FR-2.3)
+
+def _status(api, order_id, status, who="manager"):
+    return api.post(f"/api/v1/store/orders/{order_id}/status", json={"status": status}, headers=_login(api, who))
+
+
+def test_order_lifecycle_happy_path_and_events(api):
+    api.reset()
+    assert api.post("/audit/v1/checkout", json=order(order_id="ord-lc-1")).status_code == 201
+    for s in ("packed", "shipped", "delivered"):
+        r = _status(api, "ord-lc-1", s)
+        assert r.status_code == 200 and r.json() == {"order_id": "ord-lc-1", "status": s}, r.text
+    err(_status(api, "ord-lc-1", "packed"), 409, "ILLEGAL_TRANSITION")
+    assert api.post("/audit/v1/checkout", json=order(order_id="ord-lc-1")).status_code == 200  # replay still works
+    from app.db import pool
+    with pool.connection() as conn:
+        rows = conn.execute("SELECT payload FROM store_domain_events WHERE aggregate_id = 'ord-lc-1' "
+                            "ORDER BY event_seq").fetchall()
+    assert [r["payload"]["status"] for r in rows] == ["pending", "paid", "packed", "shipped", "delivered"]
+
+
+def test_order_refund_restores_stock(api):
+    api.reset()
+    assert api.post("/audit/v1/checkout", json=order(order_id="ord-lc-2", items=[{"variant_id": L, "quantity": 2}])
+                    ).status_code == 201
+    assert inv(api, L)["stock"] == 3
+    assert _status(api, "ord-lc-2", "packed").status_code == 200
+    r = _status(api, "ord-lc-2", "refunded", who="admin")
+    assert r.status_code == 200 and r.json()["status"] == "refunded"
+    assert inv(api, L)["stock"] == 5
+    err(_status(api, "ord-lc-2", "refunded"), 409, "ILLEGAL_TRANSITION")
+
+
+def test_order_status_errors(api):
+    api.reset()
+    assert api.post("/audit/v1/checkout", json=order(order_id="ord-lc-3")).status_code == 201
+    err(_status(api, "ord-lc-3", "shipped"), 409, "ILLEGAL_TRANSITION")
+    err(_status(api, "ord-nope", "packed"), 404, "ORDER_NOT_FOUND")
+    err(_status(api, "ord-lc-3", "flying"), 400, "VALIDATION_ERROR")
+    err(api.post("/api/v1/store/orders/ord-lc-3/status", json=[], headers=_login(api, "manager")),
+        400, "VALIDATION_ERROR")
+    err(_status(api, "ord-lc-3", "packed", who="player"), 403, "FORBIDDEN")
+    assert api.post("/api/v1/store/orders/ord-lc-3/status", json={"status": "packed"}).status_code == 401
+    assert api.post("/audit/v1/checkout", json=order(order_id="ord-lc-4", items=[{"variant_id": L, "quantity": 1}], token="tok_declined")).status_code == 402
+    err(_status(api, "ord-lc-4", "packed"), 409, "ILLEGAL_TRANSITION")
+
+
+def test_list_orders_by_role(api):
+    api.reset()
+    assert api.post("/audit/v1/checkout", json=order(order_id="ord-lc-5")).status_code == 201
+    body = order(order_id="ord-lc-6", items=[{"variant_id": "var-cap-001-BLK", "quantity": 1}])
+    body.pop("customer_id")
+    assert api.post("/api/v1/store/checkout", json=body, headers=_login(api, "player")).status_code == 201
+    mine = api.get("/api/v1/store/orders", headers=_login(api, "player"))
+    assert mine.status_code == 200
+    assert [o["order_id"] for o in mine.json()] == ["ord-lc-6"]
+    assert mine.json()[0]["status"] == "paid" and mine.json()[0]["total_minor"] == 120000
+    managed = {o["order_id"] for o in api.get("/api/v1/store/orders", headers=_login(api, "manager")).json()}
+    assert {"ord-lc-5", "ord-lc-6"} <= managed
+    assert api.get("/api/v1/store/orders").status_code == 401

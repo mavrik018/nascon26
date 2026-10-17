@@ -87,6 +87,7 @@ CURRENCY = "PKR"
 MAX_ITEMS = 10
 MAX_QUANTITY = 10
 MAX_CUSTOMER_ID = 200
+POST_PAID = ("paid", "packed", "shipped", "delivered", "refunded")
 REPLAY_WAIT_SECONDS = 4.0  # how long an identical request waits for its in-flight twin
 
 # (product_id, tenant_id, name, category, description, variants)
@@ -252,7 +253,7 @@ def _claim(conn, order: dict) -> tuple[str, dict | None]:
     if existing["request"] != fingerprint:
         raise conflict("DUPLICATE_ORDER_ID", f"Order {order['order_id']} already exists with a different body",
                        order_id=order["order_id"])
-    if existing["status"] == "paid":
+    if existing["status"] in POST_PAID:
         return "replay", existing["response"]
     return "wait", None  # identical request still in flight
 
@@ -506,7 +507,7 @@ async def store_checkout(request: Request, user: dict = Depends(current_user)):
 @router.get("/api/v1/store/orders/{order_id}/receipt.pdf")
 def order_receipt(order_id: str, user: dict = Depends(current_user)):
     with pool.connection() as conn:
-        row = conn.execute("SELECT customer_id, response FROM store_orders WHERE order_id = %s AND status = 'paid'",
+        row = conn.execute("SELECT customer_id, response FROM store_orders WHERE order_id = %s AND response IS NOT NULL",
                            (order_id,)).fetchone()
     if row is None:
         raise not_found("ORDER_NOT_FOUND", order_id=order_id)
@@ -515,3 +516,64 @@ def order_receipt(order_id: str, user: dict = Depends(current_user)):
     pdf = base64.b64decode(row["response"]["receipt"]["pdf_base64"])
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="receipt-{order_id}.pdf"'})
+
+
+# --------------------------------------------------------------------------- order lifecycle (FR-2.3)
+
+TRANSITIONS = {"packed": ("paid",), "shipped": ("packed",), "delivered": ("shipped",),
+               "refunded": ("paid", "packed", "shipped", "delivered")}
+
+
+def _order_tenant(conn, request: dict) -> str | None:
+    ids = [item[0] for item in (request or {}).get("items", [])]
+    row = conn.execute("SELECT p.tenant_id FROM store_variants v JOIN store_products p USING (product_id) "
+                       "WHERE v.variant_id = ANY(%s) LIMIT 1", (ids,)).fetchone()
+    return row["tenant_id"] if row else None
+
+
+def change_status(order_id: str, body, user: dict) -> dict:
+    new = body.get("status") if isinstance(body, dict) else None
+    if not isinstance(new, str) or new not in TRANSITIONS:
+        raise validation("status")
+    if user.get("role") not in MANAGER_ROLES:
+        raise forbidden("Only club managers and admins can change order status")
+    with pool.connection() as conn:
+        row = conn.execute("SELECT status, request FROM store_orders WHERE order_id = %s FOR UPDATE",
+                           (order_id,)).fetchone()
+        if row is None:
+            raise not_found("ORDER_NOT_FOUND", order_id=order_id)
+        if user.get("role") != "super_admin" and _order_tenant(conn, row["request"]) != user.get("tenant_id"):
+            raise forbidden("Order belongs to another tenant")
+        old = row["status"]
+        if old not in TRANSITIONS[new]:
+            raise conflict("ILLEGAL_TRANSITION", f"Cannot move order from {old} to {new}",
+                           order_id=order_id, from_status=old, to_status=new)
+        if new == "refunded":
+            for variant_id, quantity in sorted(row["request"].get("items", [])):
+                conn.execute("UPDATE store_variants SET stock = stock + %s WHERE variant_id = %s",
+                             (quantity, variant_id))
+        conn.execute("UPDATE store_orders SET status = %s, updated_at = now() WHERE order_id = %s", (new, order_id))
+        _emit(conn, order_id, new, old)
+    return {"order_id": order_id, "status": new}
+
+
+@router.post("/api/v1/store/orders/{order_id}/status")
+async def order_status(order_id: str, request: Request, user: dict = Depends(current_user)):
+    body = await read_json(request)
+    return await run_in_threadpool(change_status, order_id, body, user)
+
+
+@router.get("/api/v1/store/orders")
+def list_orders(user: dict = Depends(current_user)):
+    with pool.connection() as conn:
+        rows = conn.execute(
+            "SELECT order_id, customer_id, request, status, (response->>'total_minor')::bigint AS total_minor, "
+            "created_at FROM store_orders ORDER BY created_at DESC, order_id").fetchall()
+        if user.get("role") == "super_admin":
+            picked = rows
+        elif user.get("role") == "club_manager":
+            picked = [r for r in rows if _order_tenant(conn, r["request"]) == user.get("tenant_id")]
+        else:
+            picked = [r for r in rows if r["customer_id"] == user.get("sub")]
+    return [{"order_id": r["order_id"], "status": r["status"], "total_minor": r["total_minor"],
+             "created_at": r["created_at"].isoformat()} for r in picked]
