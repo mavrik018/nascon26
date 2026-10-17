@@ -47,7 +47,7 @@ void main() {
     for (final tab in ['Fixtures', 'Standings', 'Club', 'Store', 'Profile']) {
       expect(find.descendant(of: find.byType(NavigationBar), matching: find.text(tab)), findsOneWidget);
     }
-    expect(find.textContaining('Online'), findsWidgets);
+    expect(find.textContaining('Offline'), findsNothing); // status pill stays hidden while online
     await tester.pumpWidget(const SizedBox());
     state.dispose();
   });

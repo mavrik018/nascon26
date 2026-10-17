@@ -88,6 +88,8 @@ class SyncPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final n = state.pending.length;
+    // Quiet when all is well: shown only when offline, syncing or changes are waiting.
+    if (state.status == NetStatus.online && n == 0) return const SizedBox.shrink();
     final (IconData icon, String text, Color dot) = switch (state.status) {
       NetStatus.syncing => (Icons.sync, 'Syncing $n…', const Color(0xFF0A84FF)),
       NetStatus.offline => (Icons.cloud_off, n == 0 ? 'Offline' : 'Offline · $n pending', const Color(0xFFFF9F0A)),

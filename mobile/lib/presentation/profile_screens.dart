@@ -294,7 +294,10 @@ class SignInPage extends StatefulWidget {
 
 class _SignInPageState extends State<SignInPage> {
   final form = GlobalKey<FormState>();
-  final email = TextEditingController();
+  // Remember the last account used on this phone.
+  late final email = TextEditingController(
+    text: widget.state.savedAccounts.isEmpty ? '' : widget.state.savedAccounts.first.user.email,
+  );
   final password = TextEditingController();
   bool obscure = true;
   bool busy = false;

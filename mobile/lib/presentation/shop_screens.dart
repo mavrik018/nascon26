@@ -63,12 +63,14 @@ class StoreVariant {
 
 /// A store product built from GET /api/v1/store/products JSON.
 class StoreProduct {
+  final String? imageUrl;
   const StoreProduct({
     required this.id,
     required this.name,
     required this.category,
     required this.description,
     required this.variants,
+    this.imageUrl,
   });
 
   factory StoreProduct.fromJson(Map<String, dynamic> j) => StoreProduct(
@@ -77,6 +79,7 @@ class StoreProduct {
     category: humanize(asStr(j['category'], 'Other')),
     description: asStr(j['description']),
     variants: [for (final v in asList(j['variants'])) StoreVariant.fromJson(asMap(v))],
+    imageUrl: j['image_url'] is String && (j['image_url'] as String).isNotEmpty ? j['image_url'] as String : null,
   );
 
   final String id, name, category, description;
@@ -420,7 +423,16 @@ class _ProductCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            AspectRatio(aspectRatio: 1, child: ProductArt.of(p)),
+            AspectRatio(
+              aspectRatio: 1,
+              child: p.imageUrl == null
+                  ? ProductArt.of(p)
+                  : ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Image.network(p.imageUrl!, fit: BoxFit.cover, semanticLabel: p.name,
+                          errorBuilder: (_, _, _) => ProductArt.of(p)),
+                    ),
+            ),
             const SizedBox(height: 12),
             Text(
               p.category.toUpperCase(),
@@ -732,7 +744,16 @@ class _ProductPageState extends State<ProductPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              AspectRatio(aspectRatio: 1.3, child: ProductArt.of(p, variant: v)),
+              AspectRatio(
+              aspectRatio: 1.3,
+              child: p.imageUrl == null
+                  ? ProductArt.of(p, variant: v)
+                  : ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Image.network(p.imageUrl!, fit: BoxFit.cover, semanticLabel: p.name,
+                          errorBuilder: (_, _, _) => ProductArt.of(p, variant: v)),
+                    ),
+            ),
               const SizedBox(height: 20),
               Tag(p.category.toUpperCase()),
               const SizedBox(height: 10),
@@ -1417,13 +1438,14 @@ class _AddProductPageState extends State<AddProductPage> {
   final _variant = TextEditingController(text: 'One size');
   final _price = TextEditingController();
   final _stock = TextEditingController(text: '10');
+  final _image = TextEditingController();
   String _category = 'apparel';
   bool _saving = false;
   String? _error;
 
   @override
   void dispose() {
-    for (final c in [_name, _description, _variant, _price, _stock]) {
+    for (final c in [_name, _description, _variant, _price, _stock, _image]) {
       c.dispose();
     }
     super.dispose();
@@ -1440,6 +1462,7 @@ class _AddProductPageState extends State<AddProductPage> {
         'name': _name.text.trim(),
         'category': _category,
         'description': _description.text.trim(),
+        if (_image.text.trim().isNotEmpty) 'image_url': _image.text.trim(),
         'variants': [
           {
             'label': _variant.text.trim(),
@@ -1496,6 +1519,16 @@ class _AddProductPageState extends State<AddProductPage> {
                 controller: _description,
                 maxLines: 2,
                 decoration: const InputDecoration(labelText: 'Description (optional)'),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _image,
+                keyboardType: TextInputType.url,
+                decoration: const InputDecoration(labelText: 'Image link (optional)', hintText: 'https://…/photo.jpg'),
+                validator: (v) {
+                  final t = (v ?? '').trim();
+                  return t.isEmpty || t.startsWith('http://') || t.startsWith('https://') ? null : 'Must start with https://';
+                },
               ),
               const SizedBox(height: 12),
               TextFormField(

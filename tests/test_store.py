@@ -427,7 +427,7 @@ def test_products_tenant_filter(api):
     products = r.json()
     assert {p["tenant_id"] for p in products} == {"tenant-alpha"}
     jersey = next(p for p in products if p["product_id"] == "prod-jersey-001")
-    assert set(jersey) == {"product_id", "tenant_id", "name", "category", "description", "variants"}
+    assert set(jersey) == {"product_id", "tenant_id", "name", "category", "description", "image_url", "variants"}
     assert jersey["category"] == "apparel"
     assert [v["variant_id"] for v in jersey["variants"]] == [M, L]
     assert jersey["variants"][0] == {"variant_id": M, "label": "Medium", "size": "M", "color": "Red",

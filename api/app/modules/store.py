@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS store_products (
     category    TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT ''
 );
+ALTER TABLE store_products ADD COLUMN IF NOT EXISTS image_url TEXT;
 CREATE TABLE IF NOT EXISTS store_variants (
     variant_id  TEXT PRIMARY KEY,
     product_id  TEXT NOT NULL REFERENCES store_products(product_id) ON DELETE CASCADE,
@@ -430,7 +431,7 @@ def list_products(user: dict = Depends(current_user)):
     tenant_id = _tenant_scope(user)
     with pool.connection() as conn:
         products = conn.execute(
-            "SELECT product_id, tenant_id, name, category, description FROM store_products "
+            "SELECT product_id, tenant_id, name, category, description, image_url FROM store_products "
             "WHERE %(t)s::text IS NULL OR tenant_id = %(t)s ORDER BY product_id", {"t": tenant_id}).fetchall()
         variants = conn.execute(
             "SELECT product_id, variant_id, label, size, color, price_minor, currency, stock "
@@ -460,6 +461,10 @@ async def create_product(request: Request, user: dict = Depends(current_user)):
     category = body.get("category", "apparel")
     if not isinstance(category, str) or not category.strip() or len(category) > 40:
         bad.append("category")
+    image_url = body.get("image_url")
+    if image_url is not None and (not isinstance(image_url, str) or len(image_url) > 500
+                                  or not image_url.startswith(("http://", "https://"))):
+        bad.append("image_url")
     description = body.get("description", "")
     if not isinstance(description, str) or len(description) > 1000:
         bad.append("description")
@@ -482,8 +487,9 @@ async def create_product(request: Request, user: dict = Depends(current_user)):
     import time
     product_id = f"prod-{int(time.time() * 1000)}"
     with pool.connection() as conn:
-        conn.execute("INSERT INTO store_products (product_id, tenant_id, name, category, description)"
-                     " VALUES (%s, %s, %s, %s, %s)", (product_id, tenant_id, name.strip(), category.strip(), description))
+        conn.execute("INSERT INTO store_products (product_id, tenant_id, name, category, description, image_url)"
+                     " VALUES (%s, %s, %s, %s, %s, %s)",
+                     (product_id, tenant_id, name.strip(), category.strip(), description, image_url))
         for i, v in enumerate(variants):
             conn.execute(
                 "INSERT INTO store_variants (variant_id, product_id, position, label, size, color, price_minor, stock)"
@@ -491,7 +497,7 @@ async def create_product(request: Request, user: dict = Depends(current_user)):
                 (f"{product_id}-v{i + 1}", product_id, i, v["label"].strip(), v.get("size"), v.get("color"),
                  v["price_minor"], v["stock"]))
     return {"product_id": product_id, "tenant_id": tenant_id, "name": name.strip(), "category": category.strip(),
-            "description": description,
+            "description": description, "image_url": image_url,
             "variants": [{"variant_id": f"{product_id}-v{i + 1}", "label": v["label"].strip(), "size": v.get("size"),
                           "color": v.get("color"), "price_minor": v["price_minor"], "currency": "PKR",
                           "stock": v["stock"]} for i, v in enumerate(variants)]}
