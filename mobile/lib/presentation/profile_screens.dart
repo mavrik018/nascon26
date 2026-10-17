@@ -360,18 +360,6 @@ class _SignInPageState extends State<SignInPage> {
       children: [
         const SportGlassCards(),
         const SizedBox(height: 8),
-        const Text(
-          'Your game.\nAll in one place.',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: 'Inter',
-            fontSize: 30,
-            fontWeight: FontWeight.w800,
-            height: 1.1,
-            color: Colors.white,
-            letterSpacing: -1,
-          ),
-        ),
         if (notice != null)
           GlassCard(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
