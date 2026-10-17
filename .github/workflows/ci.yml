@@ -1,4 +1,5 @@
-# Rehearses the autograder: clean ubuntu-latest, docker compose up, then tests.
+# Rehearses the grader: clean ubuntu, `DAY1_SALT=... docker compose up -d --build`,
+# then the same tests over HTTP; plus the in-process suite with coverage.
 name: CI
 
 on:
@@ -6,35 +7,38 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  DAY1_SALT: ci-salt-not-secret
+
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
 
-      - name: Build and start the stack
-        run: docker compose up -d --build --wait --wait-timeout 180
-
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
-      - name: Install test tools
-        run: pip install -r tests/requirements.txt
+      - name: Unit + contract tests in-process, with coverage
+        run: bash run_tests.sh
 
-      - name: Run tests
-        run: pytest
+      - name: Build and start the stack exactly like the grader
+        run: docker compose up -d --build --wait --wait-timeout 300
+
+      - name: Same tests over HTTP against the stack
+        run: API_URL=http://localhost:8080 python -m pytest -o addopts= -q
 
       - name: Container logs on failure
         if: failure()
         run: docker compose logs --no-color
 
-      - name: Upload test report
+      - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-report
+          name: reports
           path: reports/
 
       - name: Stop the stack
