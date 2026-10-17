@@ -81,4 +81,6 @@ Errors always use `{"error":{"code","message","details"}}` (codes in spec Append
 ## Mobile
 
 Source in `mobile/`, release build at `mobile/release/app-release.apk` (Android 10+). The backend address is
-changeable in the app (emulator `http://10.0.2.2:8080`, phone: the laptop's LAN IP, e.g. `http://10.183.249.1:8080`).
+changeable in the app on the sign-in screen (**Server**) and in Profile; it is saved on the phone, so a new laptop IP needs no rebuild.
+Emulator: `http://10.0.2.2:8080`. Phone: `http://<laptop LAN IP>:8080` with laptop and phone on the same network
+(run `ipconfig` on the laptop). The app retries brief network failures and shows Online / Offline / Syncing at all times.
