@@ -171,8 +171,6 @@ void main() {
     expect(find.byKey(const Key('add-score')), findsOneWidget);
     expect(find.byKey(const Key('correct-event')), findsOneWidget);
 
-    await tester.scrollUntilVisible(find.text('Win probability'), 200);
-    expect(find.text('Win probability'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('CORRECTED'), 200);
     expect(find.text('CORRECTED'), findsOneWidget);
     expect(tester.takeException(), isNull);

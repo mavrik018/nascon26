@@ -87,6 +87,10 @@ LEAGUES = [
     ("league-alpha-1", "tenant-alpha", "Alpha Premier League", "football"),
     ("league-alpha-2", "tenant-alpha", "Alpha Champions Cup", "football"),
     ("league-beta-1", "tenant-beta", "Beta Super League", "football"),
+    # Demo leagues showing how other sports look in the app (no RBAC scenario role).
+    ("alpha-hoops", "tenant-alpha", "Alpha Basketball League", "basketball"),
+    ("alpha-cricket", "tenant-alpha", "Alpha T20 Cup", "cricket"),
+    ("alpha-esports", "tenant-alpha", "Alpha Esports Series", "esports"),
 ]
 CLUBS = [
     ("club-alpha-1", "tenant-alpha", "Alpha United"),

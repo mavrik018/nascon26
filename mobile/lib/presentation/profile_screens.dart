@@ -1,3 +1,4 @@
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/cupertino.dart'
     show CupertinoAlertDialog, CupertinoDialogAction, showCupertinoDialog;
 import 'package:flutter/material.dart';
@@ -230,7 +231,7 @@ class ProfilePage extends StatelessWidget {
                       ? (state.isOnline ? 'Online · nothing waiting' : 'Offline · nothing waiting')
                       : '$n change${n == 1 ? '' : 's'} waiting to sync',
                 ),
-                trailing: const Icon(Icons.chevron_right),
+
                 onTap: () => openPage(context, SyncPage(state: state)),
               ),
               const Divider(height: 1),
@@ -344,7 +345,8 @@ class _SignInPageState extends State<SignInPage> {
         ),
       ],
       children: [
-        const Icon(Icons.sports_soccer, size: 54, color: Colors.white),
+        const SportGlassCards(),
+        const SizedBox(height: 8),
         const Text(
           'Your game.\nAll in one place.',
           textAlign: TextAlign.center,
@@ -513,7 +515,7 @@ class _SignInPageState extends State<SignInPage> {
                     leading: Crest(s.user.name, size: 36),
                     title: Text(s.user.name, maxLines: 1, overflow: TextOverflow.ellipsis),
                     subtitle: Text(Roles.label(s.user.role)),
-                    trailing: const Icon(Icons.chevron_right),
+
                     onTap: busy ? null : () => _continueAs(s),
                   ),
               ],
@@ -676,4 +678,73 @@ class _SyncPageState extends State<SyncPage> {
       ],
     );
   }
+}
+
+
+/// Sign-in hero: four frosted-glass sport cards (football, esports, basketball,
+/// cricket) in the brand palette — the four seeded scoring models at a glance.
+class SportGlassCards extends StatelessWidget {
+  const SportGlassCards({super.key});
+
+  static const _cards = [
+    (Icons.sports_soccer, 'Football', Color(0xFFD6ECF5), Color(0xFF0B3C5D)),
+    (Icons.sports_esports, 'Esports', Color(0xFF2E8BC9), Colors.white),
+    (Icons.sports_basketball, 'Basketball', Color(0xFF1B4965), Colors.white),
+    (Icons.sports_cricket, 'Cricket', Color(0xFFB9A7DB), Colors.white),
+  ];
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Supported sports: football, esports, basketball and cricket',
+    child: ExcludeSemantics(
+      child: SizedBox(
+        height: 132,
+        child: Row(
+          children: [
+            for (final (icon, label, tint, fg) in _cards)
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.skewY(-0.06),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [tint.withValues(alpha: .78), tint.withValues(alpha: .48)],
+                            ),
+                            border: Border.all(color: Colors.white.withValues(alpha: .55), width: 1.2),
+                            boxShadow: [
+                              BoxShadow(color: Colors.black.withValues(alpha: .18), blurRadius: 18, offset: const Offset(0, 10)),
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(icon, size: 36, color: fg),
+                              const SizedBox(height: 8),
+                              Text(label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
 }

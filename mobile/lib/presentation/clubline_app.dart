@@ -65,27 +65,6 @@ class _ClublineAppState extends State<ClublineApp> {
           theme: oceanTheme(),
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: _messengerKey,
-          builder: (context, child) => Column(
-            children: [
-              if (state.ready && state.session != null)
-                SafeArea(
-                  bottom: false,
-                  child: SyncBanner(
-                    state: state,
-                    onTap: () => _navigatorKey.currentState?.push(
-                      MaterialPageRoute<void>(builder: (_) => SyncPage(state: state)),
-                    ),
-                  ),
-                ),
-              Expanded(
-                child: MediaQuery.removePadding(
-                  context: context,
-                  removeTop: state.ready && state.session != null,
-                  child: child ?? const SizedBox.shrink(),
-                ),
-              ),
-            ],
-          ),
           home: !state.ready
               ? const Scaffold(body: Center(child: CircularProgressIndicator()))
               : state.session == null
@@ -120,14 +99,32 @@ class _ClublineShellState extends State<ClublineShell> {
         },
         child: OceanBackground(
           child: Scaffold(
-            body: IndexedStack(
-              index: index,
+            body: Stack(
               children: [
-                FixturesPage(state: state),
-                StandingsPage(state: state),
-                ClubPage(state: state),
-                ShopPage(state: state),
-                ProfilePage(state: state),
+                IndexedStack(
+                  index: index,
+                  children: [
+                    FixturesPage(state: state),
+                    StandingsPage(state: state),
+                    ClubPage(state: state),
+                    ShopPage(state: state),
+                    ProfilePage(state: state),
+                  ],
+                ),
+                // Spec 8.2: always-visible online / offline / syncing + pending indicator.
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 10,
+                  child: Center(
+                    child: SyncPill(
+                      state: state,
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(builder: (_) => SyncPage(state: state)),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
             bottomNavigationBar: Container(

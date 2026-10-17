@@ -66,7 +66,61 @@ class SyncBanner extends StatelessWidget {
                         style: TextStyle(color: fg, fontWeight: FontWeight.w600),
                       ),
                     ),
-                    if (onTap != null) Icon(Icons.chevron_right, size: 20, color: fg),
+
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// iOS-style floating status pill (always visible, above the tab bar): shows
+/// Online / Offline / Syncing and the number of pending offline actions.
+class SyncPill extends StatelessWidget {
+  const SyncPill({super.key, required this.state, this.onTap});
+  final AppState state;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final n = state.pending.length;
+    final (IconData icon, String text, Color dot) = switch (state.status) {
+      NetStatus.syncing => (Icons.sync, 'Syncing $n…', const Color(0xFF0A84FF)),
+      NetStatus.offline => (Icons.cloud_off, n == 0 ? 'Offline' : 'Offline · $n pending', const Color(0xFFFF9F0A)),
+      NetStatus.online => (
+          n == 0 ? Icons.cloud_done_outlined : Icons.cloud_upload_outlined,
+          n == 0 ? 'Online' : 'Online · $n pending',
+          const Color(0xFF30D158),
+        ),
+    };
+    return Semantics(
+      button: onTap != null,
+      liveRegion: true,
+      label: 'Connection: $text. Open sync status.',
+      child: Material(
+        color: const Color(0xF21C1C1E),
+        shape: const StadiumBorder(),
+        elevation: 6,
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 40),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              child: ExcludeSemantics(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(width: 8, height: 8, decoration: BoxDecoration(color: dot, shape: BoxShape.circle)),
+                    const SizedBox(width: 8),
+                    Icon(icon, size: 16, color: Colors.white),
+                    const SizedBox(width: 6),
+                    Text(text, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
                   ],
                 ),
               ),

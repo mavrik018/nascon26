@@ -8,7 +8,6 @@ import '../core/api_client.dart';
 import '../core/app_state.dart';
 import '../core/format.dart';
 import '../core/models.dart';
-import '../core/win_probability.dart';
 import 'ocean_widgets.dart';
 
 const _live = Color(0xFFBE3450);
@@ -806,11 +805,6 @@ class _MatchPageState extends State<MatchPage> {
               _scoreCard(context),
               ?_pinned(),
               if (canScore) _scoringDesk(context),
-              _WinProbabilityCard(
-                estimate: estimateWinProbability(data),
-                home: _name(asStr(asMap(data['home'])['team_id'])),
-                away: _name(asStr(asMap(data['away'])['team_id'])),
-              ),
               ChoiceRow(
                 items: const ['Timeline', 'Match info'],
                 value: tab,
@@ -1540,113 +1534,3 @@ class _StandingsPageState extends State<StandingsPage> {
 }
 
 
-/// Animated live win-probability bar (statistical estimate, clearly labelled).
-class _WinProbabilityCard extends StatelessWidget {
-  const _WinProbabilityCard({required this.estimate, required this.home, required this.away});
-
-  final WinProbability estimate;
-  final String home;
-  final String away;
-
-  static const _awayColor = Color(0xFFE07A2E);
-
-  @override
-  Widget build(BuildContext context) {
-    final homePct = (estimate.home * 100).round();
-    final awayPct = 100 - homePct;
-    return Semantics(
-      container: true,
-      label: 'Win probability: $home $homePct percent, $away $awayPct percent. ${estimate.basis}.',
-      child: GlassCard(
-        padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-        child: ExcludeSemantics(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.insights, color: ocean, size: 20),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text('Win probability',
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: ink)),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: ocean.withValues(alpha: .10),
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                    child: Text(estimate.decided ? 'FINAL' : 'LIVE ESTIMATE',
-                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: ocean)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TweenAnimationBuilder<double>(
-                tween: Tween(end: estimate.home),
-                duration: const Duration(milliseconds: 900),
-                curve: Curves.easeOutCubic,
-                builder: (context, value, _) {
-                  final shown = (value * 100).round();
-                  return Column(
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text('$home  $shown%',
-                                maxLines: 1, overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.w800, color: ocean, fontSize: 15)),
-                          ),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text('${100 - shown}%  $away',
-                                maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.end,
-                                style: const TextStyle(fontWeight: FontWeight.w800, color: _awayColor, fontSize: 15)),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(99),
-                        child: SizedBox(
-                          height: 14,
-                          child: Row(
-                            children: [
-                              Expanded(
-                                flex: _maxInt(1, (value * 1000).round()),
-                                child: Container(
-                                  decoration: const BoxDecoration(
-                                    gradient: LinearGradient(colors: [Color(0xFF005F8C), ocean]),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 2),
-                              Expanded(
-                                flex: _maxInt(1, ((1 - value) * 1000).round()),
-                                child: Container(
-                                  decoration: const BoxDecoration(
-                                    gradient: LinearGradient(colors: [_awayColor, Color(0xFFF2A65A)]),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 10),
-              Text('${estimate.basis}. Statistical model (score margin × match progress), not a guarantee.',
-                  style: const TextStyle(fontSize: 12, color: muted)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-int _maxInt(int a, int b) => a > b ? a : b;

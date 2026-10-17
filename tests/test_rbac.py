@@ -328,12 +328,13 @@ def test_leagues_visibility(api, matrix):
     r = api.get("/api/v1/leagues", headers=bearer(matrix["tokens"]["viewer"]))
     assert r.status_code == 200
     leagues = r.json()
-    assert [lg["league_id"] for lg in leagues] == ["league-alpha-1", "league-alpha-2"]
+    assert [lg["league_id"] for lg in leagues] == ["alpha-cricket", "alpha-esports", "alpha-hoops", "league-alpha-1", "league-alpha-2"]
     assert set(leagues[0]) == {"league_id", "name", "tenant_id", "sport_id"}
-    assert all(lg["tenant_id"] == "tenant-alpha" and lg["sport_id"] == "football" for lg in leagues)
+    assert all(lg["tenant_id"] == "tenant-alpha" for lg in leagues)
+    assert {lg["sport_id"] for lg in leagues} == {"football", "basketball", "cricket", "esports"}
     all_ids = [lg["league_id"] for lg in
                api.get("/api/v1/leagues", headers=bearer(matrix["tokens"]["super_admin"])).json()]
-    assert all_ids == ["league-alpha-1", "league-alpha-2", "league-beta-1"]
+    assert all_ids == ["alpha-cricket", "alpha-esports", "alpha-hoops", "league-alpha-1", "league-alpha-2", "league-beta-1"]
     assert api.get("/api/v1/leagues").status_code == 401
 
 

@@ -71,6 +71,48 @@ def reset(conn, seed: int, body: dict) -> None:
     conn.execute("DELETE FROM scoring_matches")
     conn.execute("DELETE FROM scoring_leagues")
     _seed_demo_league(conn, seed)
+    for league_id, sport_id, name, teams in DEMO_SPORT_LEAGUES:
+        _seed_sport_league(conn, seed, league_id, sport_id, name, teams)
+
+
+# Extra demo leagues so the app shows how each scoring model is organised.
+DEMO_SPORT_LEAGUES = [
+    ("alpha-hoops", "basketball", "Alpha Basketball League", ["hoops-falcons", "hoops-titans", "hoops-comets"]),
+    ("alpha-cricket", "cricket", "Alpha T20 Cup", ["cricket-lions", "cricket-hawks", "cricket-tigers"]),
+    ("alpha-esports", "esports", "Alpha Esports Series", ["esports-nova", "esports-pulse", "esports-vortex"]),
+]
+
+
+def _seed_sport_league(conn, seed: int, league_id: str, sport_id: str, name: str, teams: list[str]) -> None:
+    """Round robin of 3 teams: one finished, one live, one upcoming. Uses whatever
+    scoring events the sport config defines (no sport-specific code)."""
+    sport = sports.get_sport(sport_id, conn)
+    pairs = [(0, 1), (1, 2), (0, 2)]
+    prefix = league_id.replace("alpha-", "")
+    fixtures = [{"match_id": f"{prefix}-m{i + 1}", "home": teams[h], "away": teams[a]}
+                for i, (h, a) in enumerate(pairs)]
+    register_league(conn, {"league_id": league_id, "sport_id": sport_id, "teams": teams, "fixtures": fixtures,
+                           "qualification": {"spots": 1}, "lots_seed": seed}, tenant_id="tenant-alpha", name=name)
+    for i, f in enumerate(fixtures):
+        conn.execute("UPDATE scoring_matches SET scheduled_at = %s, pinned_product_id = %s WHERE match_id = %s",
+                     (f"2026-10-{16 + i:02d}T18:00:00Z", "prod-jersey-001", f["match_id"]))
+    # Highest-value scoring event of this sport's config (points, runs or rounds).
+    events = sport["scoring_events"]
+    best = max(events, key=lambda k: events[k].get("points", events[k].get("runs", events[k].get("rounds", 0))))
+    n = 0
+
+    def add(match_id, type_, payload):
+        nonlocal n
+        n += 1
+        append_event(conn, {"event_id": f"{prefix}-e{n:03d}", "match_id": match_id, "type": type_, "payload": payload})
+
+    finished, live = fixtures[0], fixtures[1]
+    add(finished["match_id"], "match_start", {})
+    for team in (finished["home"], finished["away"], finished["home"]):
+        add(finished["match_id"], "score", {"team_id": team, "event_type": best})
+    add(finished["match_id"], "match_end", {})
+    add(live["match_id"], "match_start", {})
+    add(live["match_id"], "score", {"team_id": live["away"], "event_type": best})
 
 
 DEMO_LEAGUE = "league-alpha-1"
