@@ -54,3 +54,16 @@ def test_health_503_uses_error_envelope():
     from app import main
     body = main.errors.envelope(503, "SERVICE_UNAVAILABLE", "x")
     assert body.status_code == 503
+
+
+def test_single_elim_results_in_any_order(api):
+    teams = ["t1", "t2", "t3", "t4"]
+    in_order = [{"match_id": "R1M1", "winner": "t1"}, {"match_id": "R1M2", "winner": "t2"},
+                {"match_id": "R2M1", "winner": "t2"}]
+    a = api.post("/audit/v1/fixtures", json={"format": "single_elim", "teams": teams, "params": {"results": in_order}})
+    b = api.post("/audit/v1/fixtures", json={"format": "single_elim", "teams": teams,
+                                             "params": {"results": in_order[::-1]}})
+    assert a.status_code == b.status_code == 200 and a.json() == b.json()
+    bad = api.post("/audit/v1/fixtures", json={"format": "single_elim", "teams": teams,
+                                               "params": {"results": [{"match_id": "R2M1", "winner": "t9"}]}})
+    assert bad.status_code == 400

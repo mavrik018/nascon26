@@ -726,6 +726,25 @@ class Bracket:
         self.decide(result["match_id"], winner)
 
 
+def _apply_results(br, results, after=None) -> None:
+    """Apply params.results in any order: a result whose match is not playable yet is retried
+    after the others; whatever still cannot be applied raises the usual 400."""
+    pending = list(results)
+    while pending:
+        remaining = []
+        for result in pending:
+            try:
+                br.apply_result(result)
+            except ApiError:
+                remaining.append(result)
+                continue
+            if after:
+                after()
+        if len(remaining) == len(pending):
+            br.apply_result(remaining[0])  # no progress: raise its validation error
+        pending = remaining
+
+
 def _bool_param(params, key, bad):
     value = params.get(key, False)
     if not isinstance(value, bool):
@@ -761,8 +780,7 @@ def generate_single_elim(teams: list, params: dict) -> dict:
         br.route(f"R{k - 1}M1", "loser", "TP", "home")
         br.route(f"R{k - 1}M2", "loser", "TP", "away")
     br.seed_first_round("R")
-    for result in results:
-        br.apply_result(result)
+    _apply_results(br, results)
 
     rounds = [{"round": r, "matches": [m for m in br.matches.values() if m["round"] == r]}
               for r in range(1, k + 1)]
@@ -819,10 +837,10 @@ def generate_double_elim(teams: list, params: dict) -> dict:
     br.seed_first_round("WR")
     br.auto_byes("losers")
     _sync_grand_final(br, reset_on)
-    for result in results:
-        br.apply_result(result)
+    def settle():
         br.auto_byes("losers")
         _sync_grand_final(br, reset_on)
+    _apply_results(br, results, settle)
 
     def rounds_of(bracket):
         nums = sorted({m["round"] for m in br.matches.values() if m["bracket"] == bracket})
