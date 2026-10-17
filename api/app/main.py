@@ -37,6 +37,19 @@ async def limit_body_size(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    """Spec 5.13: every /api/v1/* path is limited per client IP; /audit/v1/* and /health are exempt."""
+    from .modules import rbac
+    if request.url.path.startswith("/api/v1/"):
+        retry = rbac.check_rate_limit(rbac.client_ip(request))
+        if retry is not None:
+            return errors.envelope(429, "RATE_LIMITED", "Too many requests", {"retry_after": retry},
+                                   {"Retry-After": str(retry)})
+        request.scope[rbac.RATE_LIMIT_SCOPE_FLAG] = True
+    return await call_next(request)
+
+
 for module in MODULES:
     app.include_router(module.router)
 
