@@ -24,7 +24,7 @@ services:
     build: ./api
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-league}:${POSTGRES_PASSWORD:-league-local-only}@db:5432/${POSTGRES_DB:-league}
-      DAY1_SALT: ${DAY1_SALT:-}
+      DAY1_SALT: ${DAY1_SALT}
       JWT_SECRET: ${JWT_SECRET:-change-me-local-only}
     ports:
       - "8080:8080"
