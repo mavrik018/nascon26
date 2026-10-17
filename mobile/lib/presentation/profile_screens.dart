@@ -1,3 +1,5 @@
+import 'package:flutter/cupertino.dart'
+    show CupertinoAlertDialog, CupertinoDialogAction, showCupertinoDialog;
 import 'package:flutter/material.dart';
 
 import '../toolkit/02_ui_elements/app_chip.dart';
@@ -108,9 +110,10 @@ class ProfilePage extends StatelessWidget {
 
   Future<void> _logout(BuildContext context) async {
     final pending = state.pending.length;
-    final ok = await showDialog<bool>(
+    final ok = await showCupertinoDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      barrierDismissible: true,
+      builder: (ctx) => CupertinoAlertDialog(
         title: const Text('Log out?'),
         content: Text(
           pending == 0
@@ -119,11 +122,13 @@ class ProfilePage extends StatelessWidget {
                     'They stay on this phone and will be sent after you sign in again.',
         ),
         actions: [
-          TextButton(
+          CupertinoDialogAction(
+            isDefaultAction: true,
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancel'),
           ),
-          FilledButton(
+          CupertinoDialogAction(
+            isDestructiveAction: true,
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Log out'),
           ),

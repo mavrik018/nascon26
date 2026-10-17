@@ -1,3 +1,5 @@
+import 'package:flutter/cupertino.dart'
+    show CupertinoAlertDialog, CupertinoDialogAction, showCupertinoDialog;
 import 'package:flutter/material.dart';
 
 import '../toolkit/02_ui_elements/app_chip.dart';
@@ -845,20 +847,22 @@ class _ManageRosterPageState extends State<ManageRosterPage> {
       return;
     }
     final summary = _summary;
-    final ok = await showDialog<bool>(
+    final ok = await showCupertinoDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      barrierDismissible: true,
+      builder: (ctx) => CupertinoAlertDialog(
         title: const Text('Confirm roster change'),
         content: Text(
           '$summary, starting ${isoDate(effective)}.\n\n'
           'Reason: ${reason.text.trim()}',
         ),
         actions: [
-          TextButton(
+          CupertinoDialogAction(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancel'),
           ),
-          FilledButton(
+          CupertinoDialogAction(
+            isDefaultAction: true,
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Confirm'),
           ),

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/cupertino.dart' show CupertinoDialogAction;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:league_app/core/app_state.dart';
@@ -244,7 +245,7 @@ void main() {
     await reveal(tester, find.text('Log out'));
     await tester.tap(find.text('Log out'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Log out'));
+    await tester.tap(find.widgetWithText(CupertinoDialogAction, 'Log out'));
     await tester.pumpAndSettle();
     expect(s.user, isNull);
     await finish(tester, s);

@@ -926,9 +926,16 @@ class _CartLine extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(line.productName, style: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w700)),
+                    Text(
+                      line.productName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w700),
+                    ),
                     Text(
                       '${line.variantLabel} · ${_price(line.priceMinor, line.currency)} each',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontFamily: 'Inter', fontSize: 11, color: muted),
                     ),
                     Text(
