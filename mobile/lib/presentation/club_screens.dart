@@ -9,7 +9,6 @@ import '../core/errors.dart';
 import '../core/format.dart';
 import '../core/models.dart';
 import 'ocean_widgets.dart';
-import 'onboarding_screens.dart' show MatchTelemetryCard, TacticalLineupCard;
 
 const _loanColor = Color(0xFF9B6318);
 const _danger = Color(0xFFB3261E);
@@ -252,7 +251,7 @@ class _ClubPageState extends State<ClubPage> {
         if (loaded!.fromCache) _SavedNote(loaded!.savedAt),
         _header(name, data),
         ChoiceRow(
-          items: const ['Roster', 'Lineup', 'Overview', 'Stats'],
+          items: const ['Roster', 'Overview', 'Stats'],
           value: tab,
           light: true,
           onChanged: (v) => setState(() => tab = v),
@@ -291,15 +290,10 @@ class _ClubPageState extends State<ClubPage> {
               icon: const Icon(Icons.manage_accounts_outlined),
               label: const Text('Manage roster'),
             ),
-        ] else if (tab == 'Lineup')
-          const TacticalLineupCard()
-        else if (tab == 'Overview')
+        ] else if (tab == 'Overview')
           ..._overview(data)
-        else ...[
+        else
           _stats(data),
-          const TacticalLineupCard(),
-          const MatchTelemetryCard(),
-        ],
         if (widget.state.user?.role == 'super_admin')
           TextButton.icon(
             key: const Key('delete-club'),
@@ -558,6 +552,9 @@ class PlayerPage extends StatefulWidget {
 
 class _PlayerPageState extends State<PlayerPage> {
   Loaded? loaded;
+  Map<String, dynamic>? athlete;
+  bool? following;
+  bool followBusy = false;
   String? error;
   bool loading = true;
 
@@ -576,9 +573,15 @@ class _PlayerPageState extends State<PlayerPage> {
       final r = await widget.state.load(
         '/api/v1/roster/players/${widget.playerId}/history',
       );
+      Map<String, dynamic>? ath;
+      try {
+        final rawAth = await widget.state.api.get('/api/v1/athletes/${widget.playerId}');
+        ath = asMap(rawAth);
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         loaded = r;
+        if (ath != null && ath.isNotEmpty) athlete = ath;
         loading = false;
       });
     } catch (e) {
@@ -587,6 +590,33 @@ class _PlayerPageState extends State<PlayerPage> {
         error = plainError(e);
         loading = false;
       });
+    }
+  }
+
+  Future<void> _toggleFollow() async {
+    if (followBusy) return;
+    setState(() => followBusy = true);
+    try {
+      final r = asMap(
+        await widget.state.api.send('POST', '/api/v1/athletes/${widget.playerId}/follow/toggle'),
+      );
+      if (!mounted) return;
+      setState(() {
+        following = r['following'] == true;
+        athlete = {
+          ...?athlete,
+          'followers_count': asInt(r['followers_count']),
+        };
+      });
+      notice(
+        context,
+        following == true ? 'Following athlete' : 'Unfollowed athlete',
+        kind: ToastKind.success,
+      );
+    } catch (e) {
+      if (mounted) notice(context, plainError(e), kind: ToastKind.error);
+    } finally {
+      if (mounted) setState(() => followBusy = false);
     }
   }
 
@@ -603,10 +633,15 @@ class _PlayerPageState extends State<PlayerPage> {
     final history = [
       for (final e in (raw is List ? raw : asList(h['history']))) asMap(e),
     ];
-    final name = asStr(p['name'], humanize(widget.playerId));
+    final ath = athlete ?? const <String, dynamic>{};
+    final name = asStr(p['name'], asStr(ath['name'], humanize(widget.playerId)));
+    final pos = asStr(p['position'], asStr(ath['position']));
     final reg = asStr(p['registration_type']);
     final current = asStr(h['current_squad_id'], asStr(p['squad_id']));
     final parent = asStr(h['parent_squad_id']);
+    final followers = asInt(ath['followers_count']);
+    final career = asMap(ath['career']);
+    final vods = [for (final v in asList(ath['vod'])) asMap(v)];
     final waiting = widget.state.pendingFor(
       ActionTypes.rosterTransfer,
       widget.playerId,
@@ -627,8 +662,27 @@ class _PlayerPageState extends State<PlayerPage> {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 8),
-              if (asStr(p['position']).isNotEmpty)
-                Tag(humanize(asStr(p['position']))),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                alignment: WrapAlignment.center,
+                children: [
+                  if (pos.isNotEmpty) Tag(humanize(pos)),
+                  Tag('$followers FOLLOWER${followers == 1 ? '' : 'S'}', color: ocean),
+                ],
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                key: const Key('follow-athlete-btn'),
+                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(44)),
+                onPressed: followBusy ? null : _toggleFollow,
+                icon: Icon(
+                  following == true ? Icons.person_remove_outlined : Icons.person_add_alt_1,
+                ),
+                label: Text(
+                  following == true ? 'Following · Tap to unfollow' : 'Follow athlete',
+                ),
+              ),
               const Divider(),
               DetailRow('Player ID', widget.playerId),
               if (current.isNotEmpty)
@@ -644,9 +698,39 @@ class _PlayerPageState extends State<PlayerPage> {
                 DetailRow('Loan ends', asStr(p['loan_end_date'])),
               if (asStr(h['league_id']).isNotEmpty)
                 DetailRow('League', humanize(asStr(h['league_id']))),
+              DetailRow('Deep link', 'nascon://entity/${widget.playerId}'),
             ],
           ),
         ),
+        if (career.isNotEmpty)
+          GlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SectionHeading('Career match record', trailing: Tag('SOCIAL GRAPH')),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    Tag('Played ${asInt(career['played'])}'),
+                    Tag('Won ${asInt(career['won'])}', color: green),
+                    Tag('Drawn ${asInt(career['drawn'])}', color: muted),
+                    Tag('Lost ${asInt(career['lost'])}', color: _danger),
+                  ],
+                ),
+                if (vods.isNotEmpty) ...[
+                  const Divider(height: 20),
+                  const Text(
+                    'VOD Archive',
+                    style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 6),
+                  for (final v in vods)
+                    DetailRow(asStr(v['stream_key'], 'Stream'), asStr(v['object_url'])),
+                ],
+              ],
+            ),
+          ),
         if (waiting.isNotEmpty)
           GlassCard(
             child: Column(

@@ -68,7 +68,13 @@ class _ClublineAppState extends State<ClublineApp> {
       case DeepLinkKind.costream:
         page = CoStreamPage(state: state, sessionId: link.id);
       case DeepLinkKind.entity:
-        return;
+        if (link.id.startsWith('player-')) {
+          page = PlayerPage(state: state, playerId: link.id);
+        } else if (link.id.startsWith('club-')) {
+          page = ClubPage(state: state, clubId: link.id);
+        } else {
+          return;
+        }
     }
     // After the frame that applied `ready` (and any session-change popUntil in _onState).
     WidgetsBinding.instance.addPostFrameCallback((_) {

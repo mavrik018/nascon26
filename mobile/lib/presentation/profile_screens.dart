@@ -8,6 +8,7 @@ import '../core/app_state.dart';
 import '../core/format.dart';
 import '../core/models.dart';
 import 'club_screens.dart' show plainError;
+import 'guest_screens.dart' show BroadcastHubPage;
 import 'ocean_widgets.dart';
 import 'onboarding_screens.dart';
 import 'sport_screens.dart';
@@ -220,6 +221,15 @@ class ProfilePage extends StatelessWidget {
                 ),
 
                 onTap: () => openPage(context, SyncPage(state: state)),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                key: const Key('open-broadcast-hub'),
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.live_tv_outlined, color: ocean),
+                title: const Text('Live Broadcast & QR Studio'),
+                subtitle: const Text('Stream keys, 4-way co-stream, live match chat & QR links'),
+                onTap: () => openPage(context, BroadcastHubPage(state: state)),
               ),
               const Divider(height: 1),
               ListTile(

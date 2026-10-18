@@ -106,6 +106,7 @@ def _seed_sport_league(conn, seed: int, league_id: str, sport_id: str, name: str
     # Highest-value scoring event of this sport's config (points, runs or rounds).
     events = sport["scoring_events"]
     best = max(events, key=lambda k: events[k].get("points", events[k].get("runs", events[k].get("rounds", 0))))
+    wicket_ev = next((k for k, v in events.items() if v.get("wicket")), None)
     n = 0
 
     def add(match_id, type_, payload):
@@ -117,9 +118,15 @@ def _seed_sport_league(conn, seed: int, league_id: str, sport_id: str, name: str
     add(finished["match_id"], "match_start", {})
     for team in (finished["home"], finished["away"], finished["home"]):
         add(finished["match_id"], "score", {"team_id": team, "event_type": best})
+    if wicket_ev:
+        add(finished["match_id"], "score", {"team_id": finished["home"], "event_type": wicket_ev})
+        add(finished["match_id"], "score", {"team_id": finished["away"], "event_type": wicket_ev})
+        add(finished["match_id"], "score", {"team_id": finished["away"], "event_type": wicket_ev})
     add(finished["match_id"], "match_end", {})
     add(live["match_id"], "match_start", {})
     add(live["match_id"], "score", {"team_id": live["away"], "event_type": best})
+    if wicket_ev:
+        add(live["match_id"], "score", {"team_id": live["away"], "event_type": wicket_ev})
 
 
 DEMO_LEAGUE = "league-alpha-1"
@@ -548,9 +555,15 @@ def league_fixtures(league_id: str, user: dict = Depends(auth.current_user)):
         result = []
         for m in rows:
             p = build_projection(m, match_sport(conn, m), load_events(conn, m["match_id"]))
-            result.append({"match_id": m["match_id"], "league_id": league_id, "home": m["home"], "away": m["away"],
-                           "status": p["status"], "scheduled_at": m["scheduled_at"],
-                           "home_score": p["home"]["score"], "away_score": p["away"]["score"]})
+            item = {"match_id": m["match_id"], "league_id": league_id, "home": m["home"], "away": m["away"],
+                    "status": p["status"], "scheduled_at": m["scheduled_at"],
+                    "home_score": p["home"]["score"], "away_score": p["away"]["score"]}
+            if p["home"]["wickets"] is not None:
+                item["home_wickets"] = p["home"]["wickets"]
+                item["away_wickets"] = p["away"]["wickets"]
+                item["home_overs"] = p["home"]["overs"]
+                item["away_overs"] = p["away"]["overs"]
+            result.append(item)
     return result
 
 
@@ -580,6 +593,7 @@ def match_view(conn, match_id: str, user: dict) -> dict:
     sport = match_sport(conn, match)
     result = build_projection(match, sport, load_events(conn, match_id))
     result["sport_name"] = sport["name"]
+    result["scoring_model"] = sport["scoring_model"]
     result["event_types"] = list(sport["scoring_events"])
     result["scheduled_at"] = match["scheduled_at"]
     result["venue_id"] = match.get("venue_id")
