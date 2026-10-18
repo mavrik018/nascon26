@@ -625,6 +625,12 @@ def change_status(order_id: str, body, user: dict) -> dict:
                              (quantity, variant_id))
         conn.execute("UPDATE store_orders SET status = %s, updated_at = now() WHERE order_id = %s", (new, order_id))
         _emit(conn, order_id, new, old)
+        try:  # FR-5.2: a notification problem must never fail the order transition
+            from . import notify
+            notify.publish(conn, f"order:{order_id}", "order_status",
+                           {"order_id": order_id, "status": new, "previous": old})
+        except Exception:
+            pass
     return {"order_id": order_id, "status": new}
 
 
