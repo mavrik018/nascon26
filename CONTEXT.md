@@ -3,7 +3,7 @@
 **Resume anywhere:** `git pull`, read this file, continue the next unticked row you own. Update your rows +
 "Last updated" and push at least once per window. Laptop 2's detailed instructions: `LAPTOP2_PLAN.md`.
 
-_Last updated: Sun 18 Oct 2026, 12:41 PKT (Laptop 2) — times are from the laptop clock (`date`)_
+_Last updated: Sun 18 Oct 2026, 13:01 PKT (Laptop 2) — times are from the laptop clock (`date`)_
 
 ## Hard rules (Day 2 PDF, binding)
 - Freeze 14:00, final push **14:05:00 PKT**. Push in every window: W1 ✅ · W2 ✅ · W3 12:45–13:45 (NOT yet pushed) · W4 13:45–14:05.
@@ -54,7 +54,13 @@ _Last updated: Sun 18 Oct 2026, 12:41 PKT (Laptop 2) — times are from the lapt
   on `POST /internal/media/recordings/sync`. Set `MINIO_URL=http://172.15.33.178:9000`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` in `.env`.
   Upload verified against the real MinIO; not run end to end (no ffmpeg on L2, and the MediaMTX image has no shell for hooks).
 - 6 ✅ TRACEABILITY.md Part II table + README Part II section.
-- 7 ✅ (12:40, before the merge above) backend suite **1358 passed, 2 skipped, 0 failed**; COVERAGE_DAY2.json being re-measured after the merge (pushed in W4). Selenium 3/3 on the compose Grid. Stack up healthy (warm).
+- 7 ✅ (12:40, before the merge above) backend suite **1358 passed, 2 skipped, 0 failed**; COVERAGE_DAY2.json re-measured 13:00 after the merge (suite **1357 passed, 1 skipped, 0 failed**): 95.0 · 96.6 · 91.7 · 94.4 · 94.0. Selenium 3/3 on the compose Grid. Stack up healthy (warm).
+
+- 8 ✅ (13:00) Player **sign-up**: `POST /api/v1/auth/register` (`rbac.py`, `tests/test_signup.py`) + app "New player? Create an account".
+  The APK now defaults to **L1 `http://172.15.33.181:8080`** (works from the phone and the L1 emulator; change it with the in-app server button).
+  It is installed on the TECNO phone (the old app was uninstalled first because its signature differed). The web.js modal cart merge now uses `player_id`.
+- 9 ✅ **`GUIDE_DAY2.md`**: architecture, decisions, flows, file map, live checklist, phone/emulator, Selenium/Appium/k6 for the judges, viva answers.
+- **L1 must `git pull && docker compose up -d --build --wait`** before the demo (sign-up 404s on L1 until then).
 
 ## >>> HANDOFF TO LAPTOP 2 (12:16) — remaining work, in priority order <<<
 L1 audit of every Part II FR/NFR vs code (12:05). Done & tested: all /audit/v1/* contracts (5.4–5.9), guest 403, cart merge,

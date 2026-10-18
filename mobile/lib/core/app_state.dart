@@ -197,7 +197,25 @@ class AppState extends ChangeNotifier {
   // ---------------------------------------------------------------- session
 
   Future<void> login(String email, String password) async {
-    final res = asMap(await api.post('/api/v1/auth/login', {'email': email.trim(), 'password': password}));
+    await _signIn(asMap(await api.post('/api/v1/auth/login', {'email': email.trim(), 'password': password})));
+  }
+
+  /// Self sign-up as a player (creates the login and the player profile), then signs in.
+  Future<void> register({
+    required String name,
+    required String email,
+    required String password,
+    String position = 'mf',
+  }) async {
+    await _signIn(asMap(await api.post('/api/v1/auth/register', {
+      'display_name': name.trim(),
+      'email': email.trim(),
+      'password': password,
+      'position': position,
+    })));
+  }
+
+  Future<void> _signIn(Map<String, dynamic> res) async {
     final token = asStr(res['token'] ?? res['access_token']);
     if (token.isEmpty) {
       throw const ApiException('The server did not return a sign-in token. Please try again.');

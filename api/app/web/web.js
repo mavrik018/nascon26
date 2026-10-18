@@ -226,7 +226,8 @@
         const login = await res.json();
         const token = login.access_token || login.token;
         store('member_token', token);
-        const userId = (login.user && login.user.user_id) || login.user_id;
+        // cart-merge takes the registered player's id (spec 5.7); fall back to the user id for non-players.
+        const userId = (login.user && (login.user.player_id || login.user.user_id)) || login.user_id;
         const cart = readCart();
         const guest = store(TOKEN_KEY);
         if (userId && guest && cart.length) {

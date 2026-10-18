@@ -493,6 +493,18 @@ class _SignInPageState extends State<SignInPage> {
                         : const Text('Sign in →'),
                   ),
                   const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    key: const Key('signin-create-account'),
+                    style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                    onPressed: busy
+                        ? null
+                        : () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(builder: (_) => SignUpPage(state: widget.state)),
+                          ),
+                    icon: const Icon(Icons.person_add_alt_1_outlined, size: 18),
+                    label: const Text('New player? Create an account'),
+                  ),
+                  const SizedBox(height: 8),
                   TextButton.icon(
                     style: TextButton.styleFrom(minimumSize: const Size.fromHeight(48)),
                     onPressed: () => showServerDialog(context, widget.state),
@@ -777,3 +789,141 @@ class SportGlassCards extends StatelessWidget {
   );
 }
 
+
+
+/// Player self sign-up (POST /api/v1/auth/register): creates the login and the player profile, then signs in.
+class SignUpPage extends StatefulWidget {
+  const SignUpPage({super.key, required this.state});
+  final AppState state;
+  @override
+  State<SignUpPage> createState() => _SignUpPageState();
+}
+
+class _SignUpPageState extends State<SignUpPage> {
+  final form = GlobalKey<FormState>();
+  final name = TextEditingController();
+  final email = TextEditingController();
+  final password = TextEditingController();
+  String position = 'mf';
+  bool busy = false;
+  String? error;
+
+  static const positions = [('gk', 'Goalkeeper'), ('df', 'Defender'), ('mf', 'Midfielder'), ('fw', 'Forward')];
+
+  @override
+  void dispose() {
+    name.dispose();
+    email.dispose();
+    password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!form.currentState!.validate()) return;
+    setState(() {
+      busy = true;
+      error = null;
+    });
+    try {
+      await widget.state.register(name: name.text, email: email.text, password: password.text, position: position);
+      if (!mounted) return;
+      Navigator.of(context).popUntil((r) => r.isFirst);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        busy = false;
+        error = plainError(e);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => OceanPage(
+    title: 'Create account',
+    subtitle: 'NEW PLAYER',
+    children: [
+      GlassCard(
+        child: Form(
+          key: form,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SectionHeading('Join as a player'),
+              const Text(
+                'You get a player profile in Alpha United that fans can follow.',
+                style: TextStyle(fontFamily: 'Inter', color: muted),
+              ),
+              const SizedBox(height: 14),
+              FormSection(
+                children: [
+                  TextRow(
+                    fieldKey: const Key('signup-name'),
+                    label: 'Full name',
+                    controller: name,
+                    prefixIcon: CupertinoIcons.person,
+                    validator: (v) => (v ?? '').trim().length >= 2 ? null : 'Enter your name.',
+                  ),
+                  TextRow(
+                    fieldKey: const Key('signup-email'),
+                    label: 'Email address',
+                    controller: email,
+                    prefixIcon: CupertinoIcons.mail,
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (v) => v != null && RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(v.trim())
+                        ? null
+                        : 'Enter a valid email address.',
+                  ),
+                  TextRow(
+                    fieldKey: const Key('signup-password'),
+                    label: 'Password (8+ characters)',
+                    controller: password,
+                    prefixIcon: CupertinoIcons.lock,
+                    obscureText: true,
+                    validator: (v) => (v ?? '').length >= 8 ? null : 'Use at least 8 characters.',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const Text('Position', style: TextStyle(fontFamily: 'Inter', fontSize: 11, color: muted)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final (code, label) in positions)
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 48),
+                      child: Center(
+                        widthFactor: 1,
+                        child: AppChip(
+                          label: label,
+                          selected: position == code,
+                          onTap: () => setState(() => position = code),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              if (error != null) ...[
+                const SizedBox(height: 12),
+                Semantics(
+                  liveRegion: true,
+                  child: Text(error!, style: const TextStyle(fontFamily: 'Inter', color: _danger)),
+                ),
+              ],
+              const SizedBox(height: 20),
+              FilledButton(
+                key: const Key('signup-submit'),
+                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                onPressed: busy ? null : _submit,
+                child: busy
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Create account →'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ],
+  );
+}

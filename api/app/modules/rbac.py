@@ -464,6 +464,55 @@ async def login(request: Request):
     return await run_in_threadpool(_login, body["email"], body["password"])
 
 
+SIGNUP_POSITIONS = ("gk", "df", "mf", "fw")
+
+
+def _register(body: dict) -> dict:
+    """Self sign-up as a player: login + player profile (club roster entry + athlete in the club's league)."""
+    email = body["email"].strip().lower()
+    club_id = body.get("club_id") or "club-alpha-1"
+    position = body.get("position") or "mf"
+    if position not in SIGNUP_POSITIONS:
+        raise validation(["position"])
+    if "@" not in email or len(body["password"]) < 8:
+        raise validation(["email" if "@" not in email else "password"])
+    user_id, player_id = f"user-{uuid.uuid4().hex[:10]}", f"player-{uuid.uuid4().hex[:10]}"
+    name = body["display_name"].strip()
+    with pool.connection() as conn:
+        club = conn.execute("SELECT club_id, tenant_id FROM rbac_clubs WHERE club_id = %s", (club_id,)).fetchone()
+        if club is None:
+            raise ApiError(404, "CLUB_NOT_FOUND", "Unknown club", {"club_id": club_id})
+        if conn.execute("SELECT 1 FROM rbac_users WHERE email = %s", (email,)).fetchone():
+            raise ApiError(409, "EMAIL_TAKEN", "An account with this email already exists", {"email": email})
+        league = conn.execute("SELECT league_id FROM rbac_leagues WHERE tenant_id = %s ORDER BY league_id LIMIT 1",
+                              (club["tenant_id"],)).fetchone()
+        conn.execute("INSERT INTO rbac_players (player_id, club_id, name) VALUES (%s, %s, %s)",
+                     (player_id, club_id, name))
+        if league is not None:
+            conn.execute("INSERT INTO roster_players (player_id, league_id, name, position, ord) "
+                         "SELECT %s, %s, %s, %s, COALESCE(MAX(ord), 0) + 1 FROM roster_players",
+                         (player_id, league["league_id"], name, position))
+        conn.execute("INSERT INTO rbac_users (user_id, email, password_hash, role, display_name, tenant_id, club_id,"
+                     " player_id) VALUES (%s, %s, %s, 'player', %s, %s, %s, %s)",
+                     (user_id, email, hash_password(body["password"], user_id), name, club["tenant_id"], club_id,
+                      player_id))
+        user = conn.execute(f"SELECT {USER_COLUMNS} FROM rbac_users WHERE user_id = %s", (user_id,)).fetchone()
+        return {"token": create_token(_claims_for(user)), **_profile(conn, user)}
+
+
+@api.post("/api/v1/auth/register", status_code=201)
+async def register(request: Request):
+    body = await read_json(request)
+    if not isinstance(body, dict):
+        raise validation("body")
+    bad = [f for f in ("email", "password", "display_name")
+           if not isinstance(body.get(f), str) or not body[f].strip() or len(body[f]) > 256 or "\x00" in body[f]]
+    bad += [f for f in ("club_id", "position") if body.get(f) is not None and not isinstance(body[f], str)]
+    if bad:
+        raise validation(bad)
+    return await run_in_threadpool(_register, body)
+
+
 def _user_of(conn, claims: dict) -> dict:
     user = conn.execute(f"SELECT {USER_COLUMNS} FROM rbac_users WHERE user_id = %s",
                         (str(claims.get("sub")),)).fetchone()
