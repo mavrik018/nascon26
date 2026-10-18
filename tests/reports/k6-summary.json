@@ -1,0 +1,147 @@
+{
+    "root_group": {
+        "checks": {
+            "guest QR status is 200": {
+                "name": "guest QR status is 200",
+                "path": "::guest QR status is 200",
+                "id": "d19b2f8656ec7f793483788c000537d0",
+                "passes": 1711,
+                "fails": 0
+            },
+            "has target_route": {
+                "passes": 1711,
+                "fails": 0,
+                "name": "has target_route",
+                "path": "::has target_route",
+                "id": "9a8c65b241d7b7fe17da066909e54d40"
+            },
+            "chat status is 200 or 201": {
+                "id": "1322cb83dbc8034226b1836eb2dca8ae",
+                "passes": 126,
+                "fails": 0,
+                "name": "chat status is 200 or 201",
+                "path": "::chat status is 200 or 201"
+            }
+        },
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {}
+    },
+    "metrics": {
+        "data_received": {
+            "count": 1141978,
+            "rate": 58708.295152499435
+        },
+        "http_req_sending": {
+            "avg": 0.10227207403375053,
+            "min": 0,
+            "med": 0,
+            "max": 2.0619,
+            "p(90)": 0.505,
+            "p(95)": 0.9046
+        },
+        "http_req_waiting": {
+            "avg": 4996.149519107231,
+            "min": 935.5893,
+            "med": 5295.4795,
+            "max": 10207.2236,
+            "p(90)": 5833.62228,
+            "p(95)": 6011.95374
+        },
+        "checks": {
+            "passes": 3548,
+            "fails": 0,
+            "value": 1
+        },
+        "iteration_duration": {
+            "avg": 5192.052688840505,
+            "min": 1512.6727,
+            "med": 5432.3269,
+            "max": 10564.3327,
+            "p(90)": 6083.1324,
+            "p(95)": 6281.056959999987
+        },
+        "iterations": {
+            "count": 1837,
+            "rate": 94.4388930392192
+        },
+        "http_req_connecting": {
+            "p(95)": 87.3903,
+            "avg": 18.545696733805155,
+            "min": 0,
+            "med": 0,
+            "max": 96.8389,
+            "p(90)": 75.4587
+        },
+        "http_req_duration": {
+            "max": 10314.5927,
+            "p(90)": 5970.622,
+            "p(95)": 6139.56386,
+            "avg": 5065.93382547632,
+            "min": 1383.8313,
+            "med": 5330.2411,
+            "thresholds": {
+                "p(95)<800": true
+            }
+        },
+        "vus": {
+            "value": 73,
+            "min": 73,
+            "max": 550
+        },
+        "http_req_receiving": {
+            "min": 0,
+            "med": 54.5313,
+            "max": 446.736,
+            "p(90)": 134.91092,
+            "p(95)": 180.364,
+            "avg": 69.68203429504625
+        },
+        "http_req_tls_handshaking": {
+            "avg": 0,
+            "min": 0,
+            "med": 0,
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "vus_max": {
+            "value": 550,
+            "min": 550,
+            "max": 550
+        },
+        "http_req_duration{expected_response:true}": {
+            "avg": 5065.93382547632,
+            "min": 1383.8313,
+            "med": 5330.2411,
+            "max": 10314.5927,
+            "p(90)": 5970.622,
+            "p(95)": 6139.56386
+        },
+        "http_req_blocked": {
+            "avg": 18.597998856831826,
+            "min": 0,
+            "med": 0,
+            "max": 97.8905,
+            "p(90)": 75.4587,
+            "p(95)": 87.40735999999998
+        },
+        "http_reqs": {
+            "count": 1837,
+            "rate": 94.4388930392192
+        },
+        "data_sent": {
+            "count": 220751,
+            "rate": 11348.655458519694
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 1837,
+            "thresholds": {
+                "rate==0.00": false
+            },
+            "value": 0
+        }
+    }
+}
