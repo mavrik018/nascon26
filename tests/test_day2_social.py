@@ -117,3 +117,16 @@ def test_toggle_burst_has_zero_count_drift(api):
     for u in USERS:
         api.delete(url, headers=auth(tokens[u]))
     assert api.get(f"/api/v1/athletes/{ATHLETE}").json()["followers_count"] == 0
+
+
+def test_profile_remembers_that_the_viewer_follows(api):
+    """Opening the profile again shows the saved follow (the app's button starts in the right state)."""
+    api.reset()
+    tok = token(api, "viewer")
+    assert api.get(f"/api/v1/athletes/{ATHLETE}", headers=auth(tok)).json()["following"] is False
+    assert api.put(f"/api/v1/athletes/{ATHLETE}/follow", headers=auth(tok)).status_code == 200
+    again = api.get(f"/api/v1/athletes/{ATHLETE}", headers=auth(tok)).json()
+    assert again["following"] is True and again["followers_count"] == 1
+    assert api.get(f"/api/v1/athletes/{ATHLETE}").json()["following"] is False  # anonymous reader
+    assert api.get(f"/api/v1/athletes/{ATHLETE}", headers=auth("guest_anon_tok_7721")).json()["following"] is False
+    assert api.get(f"/api/v1/athletes/{ATHLETE}", headers=auth("not-a-jwt")).json()["following"] is False

@@ -87,8 +87,20 @@ def _vod(conn, player_id: str) -> list[dict]:
         return []
 
 
+def _viewer(request: Request) -> str | None:
+    """The signed-in member reading a profile, if any (guests / anonymous / bad tokens read as None)."""
+    token = day2.bearer(request)
+    if token is None or day2.is_guest_token(token):
+        return None
+    try:
+        return auth.decode_token(token)["sub"]
+    except Exception:
+        return None
+
+
 @router.get("/api/v1/athletes/{player_id}")
-def athlete_profile(player_id: str):
+def athlete_profile(player_id: str, request: Request):
+    viewer = _viewer(request)
     with pool.connection() as conn:
         player = conn.execute("SELECT * FROM roster_players WHERE player_id = %s", (player_id,)).fetchone()
         if player is None:
@@ -98,7 +110,11 @@ def athlete_profile(player_id: str):
                             ({"played": 0, "won": 0, "drawn": 0, "lost": 0, "matches": []}, []))
         return {"player_id": player_id, "name": player["name"], "position": player["position"], "clubs": clubs,
                 "career": career, "upcoming": upcoming, "vod": _vod(conn, player_id),
-                "followers_count": _followers(conn, player_id)}
+                "followers_count": _followers(conn, player_id),
+                # Whether the caller already follows this athlete, so the app shows the saved state on every visit.
+                "following": viewer is not None and conn.execute(
+                    "SELECT 1 FROM follows WHERE follower_id = %s AND athlete_id = %s",
+                    (viewer, player_id)).fetchone() is not None}
 
 
 # --------------------------------------------------------------------------- follow graph
