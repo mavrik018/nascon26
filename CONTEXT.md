@@ -1,60 +1,68 @@
-# CONTEXT — shared live tracker (both laptops)
+# CONTEXT — shared live tracker (both laptops) + handoff for any assistant (Claude / Codex)
 
-**Resume anywhere:** `git pull`, read this file, continue your next unticked row. Update your rows + "Last updated"
-and push at least once per window. Laptop 2's detailed instructions: `LAPTOP2_PLAN.md`.
+**Resume anywhere:** `git pull`, read this file, continue the next unticked row you own. Update your rows +
+"Last updated" and push at least once per window. Laptop 2's detailed instructions: `LAPTOP2_PLAN.md`.
 
-_Last updated: Sun 18 Oct 2026, 11:50 PKT (Laptop 2)_
+_Last updated: Sun 18 Oct 2026, 12:30 PKT (Laptop 1)_
 
 ## Hard rules (Day 2 PDF, binding)
-- Freeze 14:00, final push **14:05:00 PKT**. Push in every window: W1 10:15–11:30 ✅ · W2 11:30–12:45 · W3 12:45–13:45 · W4 13:45–14:05.
+- Freeze 14:00, final push **14:05:00 PKT**. Push in every window: W1 ✅ · W2 ✅ · W3 12:45–13:45 · W4 13:45–14:05.
 - Commits descend from Day 1 `11b52ef`; never force-push or rewrite history. Author mavrik018, no co-author lines.
-- Salts only via env (`DAY1_SALT`, `DAY2_SALT` in git-ignored `.env`); hard-coding voids credit. **Never decide a salt — ask the team.**
+- **Salts:** only via env in the git-ignored `.env` (`DAY1_SALT=…`, `DAY2_SALT=…`; values from the team, never invented).
+  Day 1 code signs with `DAY1_SALT` (`signing.sign`); Day 2 code signs ONLY with `DAY2_SALT` (`signing.sign_day2`). Never mix.
+  Both are set on Laptop 1 (12:25).
 - `docker compose up -d --build` healthy ≤120 s; `localhost:4444/status` ≥3 ready nodes; ports 8080, 4444, 4723, 1935, 8888, 8889.
 - Don't fabricate reports/coverage. Backend 80% / frontend 20%.
 
-## Decisions taken (with the team, 11:10)
-- Selenium images **4.24.0** (already on Laptop 1, no 5 GB pull). MinIO image + segno/websockets/pytest-xdist approved.
-- DAY2_SALT is in Laptop 1 `.env`. DAY1_SALT: **waiting for the team to provide it**.
+## Decisions taken (with the team)
+- Selenium images 4.24.0 (already local). segno / websockets / pytest-xdist added.
+- MinIO image pull is blocked on Laptop 1 → **MinIO runs on the friend's laptop (Laptop 2)** — see request below.
 
 ## Task board
 | # | Task | Owner | Status |
 |---|---|---|---|
-| 1 | Foundation: `sign_day2`, DAY2_SALT in compose, reset seeds (match-m1, player-beta-2, QR maps, guest_anon_tok_7721, empty cart), error codes | L1 | ✅ 86964f3 (tests pass) |
-| 2 | Public guest API + `/web/*` file routes (contract in LAPTOP2_PLAN.md) | L1 | ✅ 52c414b — realtime.py + web.py; WS push <500 ms tested |
-| 3 | `POST /audit/v1/stream/key` (+ MediaMTX auth hook, revoke cuts ingest) | L1 | 🔄 agent A (streaming.py) |
-| 4 | `POST /audit/v1/costream/session` | L1 | 🔄 agent A (costream.py, also GET /api/v1/public/costream/{id}) |
-| 5 | QR: `/audit/v1/qr/{id}`, exports svg/png/pdf, `/q/{code}` 302, scan telemetry | L1 | 🔄 agent B (qr_guest.py) |
-| 6 | Guest 403 boundary + `/audit/v1/guest/cart-merge` | L1 | 🔄 403 middleware ✅ in foundation; cart-merge agent B |
-| 7 | `/audit/v1/moderation/test` + DLQ | L1 | 🔄 agent C (moderation_dlq.py, also /api/v1/chat + /api/v1/public/chat) |
-| 8 | `/metrics` + `DELETE /audit/v1/privacy/user/{id}` | L1 | 🔄 agent C (observability.py) |
-| 9 | WebSocket `/ws/matches/{id}` score push (NFR-1) | L1 | ✅ /ws/matches/{id} in realtime.py |
-| 10 | Compose: MediaMTX, MinIO, Redis, Selenium hub + 3 nodes; ≤120 s | L1 | ✅ redis + mediamtx (1935/8888/8889) + hub + 3 nodes 4.24.0; /health checks redis+media; MinIO blocked (image pull denied — waiting for team) |
-| 11 | COVERAGE_DAY2.json (measured), TRACEABILITY.md Part II rows | L1 | ⏳ |
-| L2-1 | Guest Web Player HTML/JS (9 data-testids, WCAG) | L2 | ✅ `api/app/web/` (assets via `/web/static/`). Never triggers a browser credential dialog: the stream is probed with `fetch(credentials:'omit')` before it is attached |
-| L2-2 | `tests/selenium/test_guest_grid.py` (3 tests, -n 3) | L2 | ✅ 11:50: **3/3 PASS** with the bare `pytest -n 3 tests/selenium/` on the compose Grid (hub + 3 nodes, project `l2check` on Laptop 2, code at 0da1bef + web fix). Real report in `tests/reports/selenium-report.xml` |
-| L2-3 | `tests/k6_load.js` + real k6 summary | L2 | 🟡 script committed (spec 6.4 profile, `-e API_URL=`). Summary pending L1 rows 5 + 7 |
-| L2-4 | Flutter `nascon://` deep links + APK | L2 | ✅ intent-filter + MethodChannel (no new dependency) + Match Live / Co-Stream guest screens. `flutter analyze` clean, `flutter test` 50/50. Release APK rebuilt 11:32 → `mobile/release/app-release.apk` |
-| L2-5 | `tests/appium/test_mobile_deeplink.py` | L2 | 🟡 2 deep-link tests PASS on emulator (Pixel 9 Pro XL AVD, cold start WaitTime ~1.1 s). Cross-surface test waits on `/audit/v1/moderation/test` (L1 row 7) + public chat |
-| L2-6 | `.github/workflows/autograde.yml` | L2 | ✅ written (YAML valid). Needs repo secrets `DAY1_SALT` / `DAY2_SALT` set on GitHub by the team |
+| 1 | Foundation: `sign_day2`, DAY2_SALT in compose, reset seeds, guest 403 middleware | L1 | ✅ tested |
+| 2 | Guest public API (`/api/v1/public/*`), SSE, `/web/*` routes | L1 | ✅ tested |
+| 3 | `POST /audit/v1/stream/key` + MediaMTX auth hook + revoke kicks live ingest | L1 | ✅ tested; real ffmpeg RTMP→HLS 200; revoke cut live ingest in 1.5 s |
+| 4 | `POST /audit/v1/costream/session` + `GET /api/v1/public/costream/{id}` | L1 | ✅ tested |
+| 5 | QR `/audit/v1/qr/{id}`, exports svg/png/pdf, `/q/{code}` 302, PII-free scans | L1 | ✅ tested |
+| 6 | Guest 403 boundary + `/audit/v1/guest/cart-merge` (idempotent, concurrent-safe) | L1 | ✅ tested |
+| 7 | `/audit/v1/moderation/test` + DLQ + `/api/v1/chat` + `/api/v1/public/chat/{room}` | L1 | ✅ tested (merged 12:15) |
+| 8 | `/metrics` (5 metrics) + `DELETE /audit/v1/privacy/user/{id}` | L1 | ✅ tested |
+| 9 | WebSocket `/ws/matches/{id}` (NFR-1) | L1 | ✅ tested <500 ms |
+| 10 | Compose: redis, mediamtx, selenium hub + 3 nodes | L1 | ✅ grid ready=3; guest HLS read needs no credentials (no 401) since 12:15 |
+| 10b | MinIO + stream recording + VOD index (FR-3.2) | L2 runs MinIO, L1 wires it | ⏳ waiting for L2 (request below) |
+| 11 | COVERAGE_DAY2.json (measured) | L1 | ✅ streaming 97.3 · costream 98.6 · qr_guest 91.7 · moderation_dlq 97.7 · observability 94.0 — suite 1334 passed, 1 skipped |
+| 12 | TRACEABILITY.md Part II rows + README | L1 | ⏳ next |
+| 13 | Cold start ≤120 s check; `nascon_stream_bitrate_kbps` from MediaMTX | L1 | ⏳ |
+| L2-1 | Guest Web Player HTML/JS | L2 | ✅ |
+| L2-2 | `tests/selenium/test_guest_grid.py` | L2 | ✅ 3/3 real Grid (both laptops) |
+| L2-3 | `tests/k6_load.js` + real summary | L2 | 🟡 all endpoints exist now → run against L1 `http://<L1 IP>:8080` |
+| L2-4 | Flutter `nascon://` deep links + APK | L2 | ✅ APK rebuilt 11:32 |
+| L2-5 | `tests/appium/test_mobile_deeplink.py` | L2 | 🟡 2 deep links PASS; cross-surface test can run now (chat routes merged) |
+| L2-6 | `.github/workflows/autograde.yml` | L2 | ✅ needs GitHub repo secrets `DAY1_SALT` / `DAY2_SALT` (team sets them in GitHub settings) |
 
 ## Requests between laptops
-- **L2 → L1** (11:50, important): MediaMTX answers `playback_url` (`:8888/matches/match-m1/index.m3u8`) with **401 + `WWW-Authenticate: Basic`**.
-  In a browser that pops a credential dialog (spec FR-4.2 forbids that), and the dialog swallowed every click, so Selenium tests 2+3 failed
-  until I patched the player. The player now probes first and never prompts. Guests still need HLS **read** without
-  credentials (MediaMTX `authInternalUsers` read for any user, or a read token in the URL), otherwise the video never plays.
-- **L2 → L1** (11:21): `GET /api/v1/public/chat/{room}` is still missing (**L1: agent C is building it with /api/v1/chat, merging ~12:00**). The web + app chat poll it every second. Messages accepted by
-  `/audit/v1/moderation/test` should show up there, because the cross-surface Appium test posts through that route.
-- **L2 → L1**: keep the compose service name `api`. The Grid browsers run in containers, so the Selenium suite probes the
-  `WEB_BASE` env first, then `localhost:8080`, `api:8080`, `host.docker.internal:8080`.
-- **L2 → L1**: `ci.yml` "Same tests over HTTP" now also collects `tests/selenium` + `tests/appium`. Add
-  `--ignore=tests/selenium --ignore=tests/appium` (autograde.yml already does). **L1: done 11:36.**
-- **L2 → L1**: `.gitignore` has `reports/`, which also ignores `tests/reports/`. Please add `!tests/reports/` (until then L2 uses `git add -f`). **L1: done 11:36.**
-
-- **L1 → L2**: guest page must use the contract in LAPTOP2_PLAN.md; inside Grid nodes the backend is http://api:8080.
+- **L1 → L2 (MinIO, 12:30) — please do first:** run MinIO on your laptop:
+  `docker run -d --name minio -p 9000:9000 -p 9001:9001 -e MINIO_ROOT_USER=nascon -e MINIO_ROOT_PASSWORD=nascon-local-only <your-minio-image> server /data --console-address :9001`
+  (or `minio.exe server C:\minio-data --console-address :9001`). Create bucket `vod`. Then write here: your LAN IP,
+  the exact image name you used, and that `http://<ip>:9000/minio/health/live` returns 200. L1 then sends recordings + VOD index there
+  and adds a `minio` service with that image to docker-compose.yml.
+- **L1 → L2:** chat (`/api/v1/chat`, `/api/v1/public/chat/{room}`), costream, QR, moderation are all merged and running on L1 — run k6 + the
+  Appium cross-surface test against L1.
+- Done by L1: guest HLS read without credentials (12:15) · tests/reports un-ignored · ci.yml ignores selenium/appium.
+- Keep compose service name `api` (Grid nodes reach the backend as `http://api:8080`).
 
 ## Known failures / notes
-- Laptop 2: `flutter build apk` fails from the repo path because the `&` in `SAEED & SONS` breaks `gradlew.bat`. Build from a
-  `subst` drive instead (also: pinned NDK 28.2 not installable here, local build used NDK 30 without committing that change): `subst N: "<repo>"` then run the build in `N:\mobile`.
-- Cold `docker compose up -d --build` took 227 s here (image build); warm start ~20 s. Needs trimming (≤120 s rule).
-- DAY1_SALT not yet provided to Laptop 1 (.env blank).
-- MinIO recording not started: docker.io and quay.io images unavailable.
+- A DB seeded before today lacks match-m1 → `POST /audit/v1/reset` (the grader resets anyway).
+- Cold `docker compose up -d --build` took 227 s on L1 (image build + pulls); warm ~20 s.
+- Laptop 2: build the APK from a `subst` drive (the `&` in the folder name breaks gradlew.bat); local NDK 30 used, not committed.
+
+## How to continue (any assistant: Claude / Codex)
+- Backend tests: `docker run -d --rm --name league-test-db -p 55433:5432 -e POSTGRES_USER=league -e POSTGRES_PASSWORD=test -e POSTGRES_DB=league postgres:16-alpine`,
+  then `TEST_DATABASE_URL=postgresql://league:test@localhost:55433/league DAY1_SALT=test-salt DAY2_SALT=test-day2-salt python -m pytest -q -o addopts= --ignore=tests/selenium --ignore=tests/appium`.
+- Coverage: add `--cov=app --cov-report=json:reports/coverage.json`, then `python tools/coverage_report.py reports/coverage.json --day2`.
+- Stack: `docker compose up -d --build --wait` (reads `.env`), then `curl -X POST localhost:8080/audit/v1/reset`.
+- Selenium: `GRID_URL=http://localhost:4444 WEB_BASE=http://api:8080 API_URL=http://localhost:8080 pytest -n 3 -o addopts= tests/selenium`.
+- Day 2 code: `api/app/modules/{day2,streaming,costream,qr_guest,moderation_dlq,observability,realtime,web}.py`; tests `tests/test_day2_*.py`;
+  guest pages `api/app/web/`; media config `infra/mediamtx.yml`.
