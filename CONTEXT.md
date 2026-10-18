@@ -37,7 +37,7 @@ _Last updated: Sun 18 Oct 2026, 11:57 PKT (Laptop 2) — times are from the lapt
 | 13 | Cold start ≤120 s check; `nascon_stream_bitrate_kbps` from MediaMTX | L1 | ⏳ |
 | L2-1 | Guest Web Player HTML/JS | L2 | ✅ |
 | L2-2 | `tests/selenium/test_guest_grid.py` | L2 | ✅ 3/3 real Grid (both laptops) |
-| L2-3 | `tests/k6_load.js` + real summary | L2 | ❌ ran 11:5x from L2 against L1 (172.15.33.181), 550 VUs/15 s: **0 failed requests** (1837 reqs, all checks pass) but **p95 6.1 s → `p(95)<800` FAILS**. The time is server wait (TTFB p95 6.0 s; TCP connect p95 87 ms; idle latency 20–70 ms). Real summary committed in `tests/reports/k6-summary.json`. Needs L1 (request below) |
+| L2-3 | `tests/k6_load.js` + real summary | L2 | ❌ ran 11:52 from L2 against L1 (172.15.33.181), 550 VUs/15 s: **0 failed requests** (1837 reqs, all checks pass) but **p95 6.1 s → `p(95)<800` FAILS**. The time is server wait (TTFB p95 6.0 s; TCP connect p95 87 ms; idle latency 20–70 ms). Real summary committed in `tests/reports/k6-summary.json`. Needs L1 (request below) |
 | L2-4 | Flutter `nascon://` deep links + APK | L2 | ✅ APK rebuilt again: the Co-Stream screen loads chat even when the session lookup fails |
 | L2-5 | `tests/appium/test_mobile_deeplink.py` | L2 | ✅ 11:57: **3/3 PASS against L1** (emulator, app → L1 via a forwarder on L2:8080; compose Grid browser → L1). Cross-surface chat reached both the app and the browser in ≤3 s. Cold launch WaitTime 1.26–1.29 s (only the very first launch after a fresh install: 3.1 s). Report in `tests/reports/appium-report.xml` |
 | L2-6 | `.github/workflows/autograde.yml` | L2 | ✅ needs GitHub repo secrets `DAY1_SALT` / `DAY2_SALT` (team sets them in GitHub settings) |

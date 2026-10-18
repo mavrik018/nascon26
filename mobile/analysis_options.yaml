@@ -13,6 +13,8 @@ analyzer:
   exclude:
     # Laptop 2's static-preview screenshot tool (renders the pre-integration sample UI).
     - tool/**
+    - build/**
+    - android/**
 
 linter:
   # The lint rules applied to this project can be customized in the
