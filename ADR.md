@@ -106,3 +106,107 @@ Each record: context → decision → alternatives → why → trade-offs / limi
   the signed-in account's actions, with that account's token. Others wait untouched until their owner signs in.
 - **Why:** before, a viewer signing in after a manager saw the manager's queue and synced it with the viewer's token,
   so the server rightly rejected (and the app dropped) the manager's work.
+
+# Part II (Day 2) decisions
+
+ADR-2 still holds for Part I data. Part II adds Redis (shared counters, ADR-16), MediaMTX (ADR-20) and MinIO (ADR-21),
+because the spec requires media, multi-worker scale and object storage. Postgres stays the system of record.
+
+## ADR-14 Guest read-only boundary enforced in one ASGI middleware
+- **Context:** FR-4.3: any write with a `guest_anon_tok_*` token must get `403 GUEST_WRITE_FORBIDDEN`. Hiding UI earns no credit.
+- **Decision:** the pure-ASGI `Guards` middleware (`main.py`) rejects every POST/PUT/PATCH/DELETE carrying a guest token,
+  on every route, before any handler runs. It also applies the per-IP rate limit (`/audit/v1/*` exempt).
+  Routes that need a member (follow, host controls) also refuse anonymous callers.
+- **Alternatives:** a check inside each write handler; a FastAPI dependency per router.
+- **Why:** one place that new routes cannot forget. The guest web page only reacts to the 403 (it opens the login modal).
+- **Trade-offs:** the middleware must stay cheap (it runs on every request), so it does no DB work.
+
+## ADR-15 Separate Day 2 signing function and salt
+- **Decision:** `signing.sign_day2(entity_id, payload)` = HMAC-SHA256(`DAY2_SALT`, `entity_id|canonical JSON`). It is used by
+  every Part II module. Day 1 keeps `sign` with `DAY1_SALT`. Both salts come only from the environment (`.env`, CI secrets).
+- **Why:** mixing salts silently breaks every vector; two functions make the choice explicit in code review.
+- **Trade-offs:** none beyond keeping both salts in `.env`.
+
+## ADR-16 Real time through Postgres rows polled by SSE / WebSocket; Redis for shared counters
+- **Context:** NFR-1 (score push p95 < 500 ms) with 8 uvicorn workers; a client may be connected to any worker.
+- **Decision:** events (scores, notifications) are committed to Postgres first. Each SSE / WebSocket connection polls
+  `id > last_seen` about every 0.2 s. The rate-limit counters and the active-WebSocket count live in Redis (`redis_kv.py`).
+- **Alternatives:** in-process pub/sub (breaks across workers); Redis pub/sub or a broker for every event.
+- **Why:** correct across processes and restarts, with no lost events, and simple to test. Latency stays far under 500 ms.
+- **Trade-offs:** small constant DB load per open connection.
+
+## ADR-17 Per-entity advisory locks and stored responses for idempotent probes
+- **Decision:** writes that must be exact under bursts take `pg_advisory_xact_lock(hashtext(<entity>))`: follow per
+  athlete, co-stream per session, cart merge per guest token, chat per room. Probes store their canonical request and
+  response. An identical replay returns the stored answer (200); a different body is a 409 (or re-evaluation for co-streams).
+- **Why:** follower count == row count and single cart merges are guaranteed by the database, not by timing. Replays
+  cover the "4G → Wi-Fi mid-request" edge case.
+- **Trade-offs:** contention is serialised per entity (fine at this scale).
+
+## ADR-18 Notification bus with bounded retry and a Postgres dead-letter queue
+- **Decision:** `notify.publish()` stores the event, then delivers it via `moderation_dlq.deliver()`: 3 attempts with
+  0.1 / 0.2 / 0.4 s backoff, then a `notification_dlq` row. Dead letters are never shown to subscribers.
+  `/metrics` exports `nascon_dlq_depth`. Order status changes publish `order:{id}`; host controls publish `costream:{id}`.
+- **Alternatives:** RabbitMQ / Redis Streams with a DLX.
+- **Why:** inspectable through the audit contract and durable, with no extra broker to run.
+- **Trade-offs:** delivery retries run inline (bounded to under 1 s).
+
+## ADR-19 Dynamic QR: stable short link, destination decided at scan time
+- **Decision:** a QR encodes `/q/{short_code}`. `qr_guest.py` picks preview / live / vod / notice from the live match
+  status and answers 302. Exports (SVG / PNG / PDF) are generated on request. Scan telemetry stores a count, the
+  device family and a UTC time bucket only.
+- **Why:** printed codes keep working as the match state changes (FR-4.1). Storing no IP / UA / cookie satisfies NFR-9.
+
+## ADR-20 MediaMTX as the media server; the API decides who may publish
+- **Decision:** MediaMTX serves RTMP 1935, HLS 8888 and WebRTC 8889. It calls `POST /internal/media/auth` before accepting
+  a publish, so only an active stream key can go live. Revoking a key also kicks the live publisher through MediaMTX's control API.
+  Guest HLS reads need no credentials.
+- **Alternatives:** nginx-rtmp; LiveKit SFU.
+- **Why:** a single container covers all three protocols, recording and an auth hook.
+
+## ADR-21 Recording: MediaMTX writes segments, the API uploads and indexes them
+- **Context:** FR-3.2 asks for recordings in object storage and a VOD archive. The MediaMTX image has no shell for `runOn*` hooks.
+- **Decision:** `pathDefaults.record` writes 10 s fMP4 segments to a shared `recordings` volume. `recording.py` indexes
+  finished segments (untouched for 3 s): it uploads each to MinIO with a stdlib SigV4 PUT and inserts a `vod_recordings` row.
+  This runs after a stream key is revoked and on `POST /internal/media/recordings/sync`. With no `MINIO_URL`, rows are
+  indexed without upload. MinIO runs on Laptop 2 (`172.15.33.178:9000`, bucket `vod`).
+- **Alternatives:** boto3 / minio SDK (extra package); a sidecar container with `mc mirror`.
+- **Why:** no new dependency, testable without media, and safe on a CI runner with no MinIO.
+- **Trade-offs / limits:** upload + index are tested against the real MinIO; the full RTMP → record → upload chain was not run
+  end to end (no ffmpeg on Laptop 2).
+
+## ADR-22 Guest Web Player in plain HTML / JS, served by the API
+- **Decision:** `api/app/web/*.html` plus one `web.js` / `web.css` with no framework and no build step, served from
+  `/web/static/`. It carries the 9 spec `data-testid`s and meets WCAG AA (contrast ≥ 4.5:1, keyboard, ARIA, 48 px targets).
+  It probes the stream with `fetch(credentials:'omit')` before attaching it.
+- **Why:** zero install, fastest load for QR scans, nothing to compile on the grader. The probe was added after a media
+  server 401 made Chrome open a credential dialog that swallowed every click (FR-4.2 forbids credential dialogs).
+
+## ADR-23 Native deep links without a plugin; each link is used once
+- **Decision:** an Android `nascon` VIEW / BROWSABLE intent-filter plus a MethodChannel `nascon/deeplink` in
+  `MainActivity.kt`. Dart parses the link (`deep_links.dart`) and opens the read-only Match Live / Co-Stream screens on top of
+  any screen, sign-in included. `takeLink` clears the intent's data after reading it and ignores launches from Recents.
+- **Alternatives:** `app_links` / `uni_links` packages.
+- **Why:** no new dependency (the team rule: ask before adding one). Consuming the link stops Android from reopening an
+  old deep link when the app is relaunched from Recents.
+
+## ADR-24 Throughput: 8 workers with uvicorn[standard]
+- **Context:** k6 (spec 6.4, 550 VUs) first measured p95 6.1 s, with all of it queueing in the server.
+- **Decision:** 8 uvicorn workers, `uvicorn[standard]` (uvloop + httptools), one ASGI guard middleware instead of several,
+  Redis-shared counters. The package was approved by the team.
+- **Result:** p95 344 ms, 0 failed of 27,643 requests (k6 inside the compose network on Laptop 2).
+
+## ADR-25 Player self sign-up creates the login and the player profile together
+- **Decision:** `POST /api/v1/auth/register` (`rbac.py`) inserts `rbac_players`, `roster_players` and a `player`-role
+  `rbac_users` row in one transaction (default club Alpha United) and returns the same body as login. The app's sign-in
+  screen links to a sign-up form. The release APK's default server is Laptop 1's LAN address (changeable in the app).
+- **Why:** FR-4.4's progressive registration needs a way to become a member. Demos need several real players for chat
+  and co-streams.
+- **Trade-offs:** no email verification (demo scope); emails are unique (409 `EMAIL_TAKEN`).
+
+## ADR-26 QA harness choices: Grid URL probe, device-measured launch time
+- **Decision:** the Selenium suite finds the API URL its containerised browsers can reach (`WEB_BASE`, `localhost`,
+  `api`, `host.docker.internal`) and always writes JUnit XML. The Appium suite measures foreground time with Android's own
+  `am start -W` `WaitTime`, not the test's clock.
+- **Why:** the grader runs `pytest -n 3 tests/selenium/` with no settings. Host-side timing added adb start-up and
+  Appium round trips (≈1 s) that are not app launch time.

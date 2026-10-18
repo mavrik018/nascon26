@@ -3,7 +3,7 @@
 **Resume anywhere:** `git pull`, read this file, continue the next unticked row you own. Update your rows +
 "Last updated" and push at least once per window. Laptop 2's detailed instructions: `LAPTOP2_PLAN.md`.
 
-_Last updated: Sun 18 Oct 2026, 13:01 PKT (Laptop 2) — times are from the laptop clock (`date`)_
+_Last updated: Sun 18 Oct 2026, 13:10 PKT (Laptop 2) — times are from the laptop clock (`date`)_
 
 ## Hard rules (Day 2 PDF, binding)
 - Freeze 14:00, final push **14:05:00 PKT**. Push in every window: W1 ✅ · W2 ✅ · W3 12:45–13:45 (NOT yet pushed) · W4 13:45–14:05.
@@ -59,6 +59,10 @@ _Last updated: Sun 18 Oct 2026, 13:01 PKT (Laptop 2) — times are from the lapt
 - 8 ✅ (13:00) Player **sign-up**: `POST /api/v1/auth/register` (`rbac.py`, `tests/test_signup.py`) + app "New player? Create an account".
   The APK now defaults to **L1 `http://172.15.33.181:8080`** (works from the phone and the L1 emulator; change it with the in-app server button).
   It is installed on the TECNO phone (the old app was uninstalled first because its signature differed). The web.js modal cart merge now uses `player_id`.
+- 10 ✅ (13:09) Deep-link fix: the app used to reopen the old `nascon://` screen when relaunched from Recents. `MainActivity.takeLink` now
+  uses each link once. Checked on the emulator: link → Co-Stream; Recents → start screen; icon → start screen. APK rebuilt and installed
+  on the phone + emulator. **Appium 3/3 on the emulator** (`ANDROID_SERIAL=emulator-5554`, app → L1 directly) → `tests/reports/appium-report.xml`.
+  ADR.md: ADR-14…26 (Part II decisions); TRACEABILITY.md: sign-up row + deep-link note.
 - 9 ✅ **`GUIDE_DAY2.md`**: architecture, decisions, flows, file map, live checklist, phone/emulator, Selenium/Appium/k6 for the judges, viva answers.
 - **L1 must `git pull && docker compose up -d --build --wait`** before the demo (sign-up 404s on L1 until then).
 

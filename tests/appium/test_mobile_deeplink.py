@@ -51,6 +51,8 @@ def driver():
     options.app_activity = ".MainActivity"
     options.no_reset = True
     options.auto_launch = False
+    if os.environ.get("ANDROID_SERIAL"):  # several devices attached: Appium and adb must drive the same one
+        options.udid = os.environ["ANDROID_SERIAL"]
     drv = webdriver.Remote(APPIUM_URL, options=options)
     yield drv
     drv.quit()

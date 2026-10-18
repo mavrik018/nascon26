@@ -251,6 +251,7 @@ The demo accounts (password `Nascon@26`) also work: `player@`, `manager@`, `orga
    ```
 
    The phone shows the participants and the live chat (read-only).
+   The link is used once: reopening the app from Recents or from its icon goes to the normal start screen.
 2. On a laptop browser, open `http://172.15.33.181:8080/web/costream/cs-session-101`.
 3. As a guest, type a message and press **Send**. The **login modal** appears and the message is not posted: that's the 403 rule.
 4. Log in inside the modal with a signed-up player (or `player@nascon.test` / `Nascon@26`) and send again. The message appears in the browser and, within about 1 s, on the phone.
@@ -292,6 +293,7 @@ The demo accounts (password `Nascon@26`) also work: `player@`, `manager@`, `orga
   appium                                     # in one terminal (if not already running): Appium 2 on :4723
   adb devices                                # the emulator or phone must be listed as "device"
   curl http://localhost:4723/status          # "ready": true
+  set ANDROID_SERIAL=emulator-5554          # run on the EMULATOR, even if the phone is plugged in too
   set GRID_URL=http://172.15.33.181:4444
   set WEB_BASE=http://api:8080
   set API_URL=http://172.15.33.181:8080
@@ -299,6 +301,10 @@ The demo accounts (password `Nascon@26`) also work: `player@`, `manager@`, `orga
   ```
 
   Those `set` lines are for cmd.exe. In Git Bash use `export GRID_URL=...` instead.
+
+  `ANDROID_SERIAL` is required when more than one device is connected. Appium and `adb` then both drive the emulator,
+  not the physical phone. `adb devices` lists the names. Measured on Laptop 2 at 13:09: **3 passed**.
+  Keep the physical phone for hand-testing chats and sign-ups.
 - **The app talks to Laptop 1 directly.** The APK's default server is Laptop 1, so no port forwarding is needed. Open the app once before the run; the first launch after installing is slow.
 
 ### k6: load test

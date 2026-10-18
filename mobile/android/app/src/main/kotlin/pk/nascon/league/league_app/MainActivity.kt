@@ -13,7 +13,7 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "nascon/deeplink").apply {
             setMethodCallHandler { call, result ->
-                if (call.method == "getInitialLink") result.success(intent?.dataString) else result.notImplemented()
+                if (call.method == "getInitialLink") result.success(takeLink(intent)) else result.notImplemented()
             }
         }
     }
@@ -21,6 +21,15 @@ class MainActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        intent.dataString?.let { channel?.invokeMethod("onLink", it) }
+        takeLink(intent)?.let { channel?.invokeMethod("onLink", it) }
+    }
+
+    /** A link is used once. Android re-delivers the original intent when the app is reopened from Recents
+     *  (after the process was killed), which must open the normal start screen, not the old deep link again. */
+    private fun takeLink(intent: Intent?): String? {
+        if (intent == null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return null
+        val link = intent.dataString
+        intent.data = null
+        return link
     }
 }
