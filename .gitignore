@@ -26,3 +26,4 @@ mobile/android/key.properties
 stitch-api-key.txt
 *api-key*.txt
 *.key
+!tests/reports/

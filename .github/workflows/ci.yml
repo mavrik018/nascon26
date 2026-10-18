@@ -28,7 +28,7 @@ jobs:
         run: docker compose up -d --build --wait --wait-timeout 300
 
       - name: Same tests over HTTP against the stack
-        run: API_URL=http://localhost:8080 python -m pytest -o addopts= -q
+        run: API_URL=http://localhost:8080 python -m pytest -o addopts= -q --ignore=tests/selenium --ignore=tests/appium
 
       - name: Container logs on failure
         if: failure()

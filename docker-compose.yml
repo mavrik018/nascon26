@@ -27,17 +27,85 @@ services:
       DAY1_SALT: ${DAY1_SALT}
       DAY2_SALT: ${DAY2_SALT}
       JWT_SECRET: ${JWT_SECRET:-change-me-local-only}
+      REDIS_HOST: redis
+      MEDIA_API_URL: http://mediamtx:9997
     ports:
       - "8080:8080"
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      mediamtx:
+        condition: service_started
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
       interval: 3s
       timeout: 3s
       retries: 30
       start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Self-hosted media server (spec 6.1): RTMP 1935, HLS 8888, WebRTC WHIP/WHEP 8889.
+  # Every publish is authorised by the API (/internal/media/auth), so a revoked stream key cannot ingest.
+  mediamtx:
+    image: bluenviron/mediamtx:1.9.1
+    volumes:
+      - ./infra/mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      - "1935:1935"
+      - "8888:8888"
+      - "8889:8889"
+      - "8189:8189/udp"
+
+  # Selenium Grid 4 (spec 6.2.1): hub + 3 browser nodes, shm 1 GB, VNC off. 4.24.0 images (team decision).
+  selenium-hub:
+    image: selenium/hub:4.24.0
+    container_name: nascon-selenium-hub
+    ports:
+      - "4444:4444"
+      - "4442:4442"
+      - "4443:4443"
+
+  node-chrome-1:
+    image: selenium/node-chrome:4.24.0
+    shm_size: "1gb"
+    depends_on: [selenium-hub]
+    environment:
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+      - SE_NODE_MAX_SESSIONS=2
+      - SE_START_VNC=false
+
+  node-chrome-2:
+    image: selenium/node-chrome:4.24.0
+    shm_size: "1gb"
+    depends_on: [selenium-hub]
+    environment:
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+      - SE_NODE_MAX_SESSIONS=2
+      - SE_START_VNC=false
+
+  node-firefox:
+    image: selenium/node-firefox:4.24.0
+    shm_size: "1gb"
+    depends_on: [selenium-hub]
+    environment:
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+      - SE_NODE_MAX_SESSIONS=2
+      - SE_START_VNC=false
 
 volumes:
   pgdata:

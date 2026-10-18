@@ -1,0 +1,26 @@
+# MediaMTX config (spec 6.1). Ports: RTMP 1935, HLS 8888, WebRTC 8889 (+8189/udp ICE), control API 9997.
+logLevel: info
+
+api: yes
+apiAddress: :9997
+
+rtmp: yes
+rtmpAddress: :1935
+hls: yes
+hlsAddress: :8888
+hlsAlwaysRemux: yes
+webrtc: yes
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+webrtcAdditionalHosts: [localhost, 127.0.0.1]
+
+# The API decides who may publish: POST /internal/media/auth returns 200 only for an active stream key.
+authMethod: http
+authHTTPAddress: http://api:8080/internal/media/auth
+authHTTPExclude:
+  - action: api
+  - action: metrics
+  - action: pprof
+
+paths:
+  all_others:

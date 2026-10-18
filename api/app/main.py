@@ -68,9 +68,38 @@ for module in MODULES:
     app.include_router(module.router)
 
 
+def _redis_ok() -> bool:
+    """PING over a raw socket (no client library needed). Skipped when REDIS_HOST is not configured."""
+    import os
+    import socket
+    host = os.environ.get("REDIS_HOST")
+    if not host:
+        return True
+    try:
+        with socket.create_connection((host, int(os.environ.get("REDIS_PORT", "6379"))), timeout=1) as s:
+            s.sendall(b"PING\r\n")
+            return s.recv(16).startswith(b"+PONG")
+    except OSError:
+        return False
+
+
+def _media_ok() -> bool:
+    """MediaMTX control API answers. Skipped when MEDIA_API_URL is not configured."""
+    import os
+    import urllib.request
+    url = os.environ.get("MEDIA_API_URL")
+    if not url:
+        return True
+    try:
+        with urllib.request.urlopen(url + "/v3/paths/list", timeout=1) as r:
+            return r.status == 200
+    except OSError:
+        return False
+
+
 @app.get("/health")
 def health(response: Response):
-    """200 only when the database is reachable and the baseline is seeded (spec 5.4)."""
-    if core.is_ready():
+    """200 only when the database is reachable and seeded, and Redis + the media server answer (Part II 5.1)."""
+    if core.is_ready() and _redis_ok() and _media_ok():
         return {"status": "ok"}
-    return errors.envelope(503, "SERVICE_UNAVAILABLE", "Database not reachable or baseline not seeded")
+    return errors.envelope(503, "SERVICE_UNAVAILABLE", "Database, Redis or media server not ready")
