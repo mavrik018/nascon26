@@ -209,4 +209,5 @@ because the spec requires media, multi-worker scale and object storage. Postgres
   `api`, `host.docker.internal`) and always writes JUnit XML. The Appium suite measures foreground time with Android's own
   `am start -W` `WaitTime`, not the test's clock.
 - **Why:** the grader runs `pytest -n 3 tests/selenium/` with no settings. Host-side timing added adb start-up and
+
   Appium round trips (≈1 s) that are not app launch time.
