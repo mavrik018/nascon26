@@ -57,7 +57,7 @@ proxy — measure inside the network or from another laptop.
    An L1 background agent was building this on branch `day2-social` in a local worktree on L1 — it will NOT be pushed while L1 is
    out. **L2: implement it yourself** in a new `api/app/modules/social.py` + `tests/test_day2_social.py`, add `social` to
    `api/app/modules/__init__.py`.
-2. **FR-3.3 host controls + FR-5.2 notification bus** (same situation, L1 agent branch `day2-host-notify` won't be pushed).
+2. ✅ **DONE by L1 agent, merged ~12:35 (`hostctl.py`, `notify.py`); full suite on merged main 1348 passed, 1 skipped — skip.** ~~FR-3.3 host controls + FR-5.2 notification bus~~ (same situation, L1 agent branch `day2-host-notify` won't be pushed).
    L2: `api/app/modules/hostctl.py` (POST /api/v1/costream/{id}/invites signed with sign_day2, /join, /controls mute|spotlight|kick,
    GET /api/v1/public/costream/{id}/state) and `notify.py` (publish → notifications table + SSE /api/v1/notifications/stream?topic=,
    simulate_dlq → moderation_dlq.deliver → notification_dlq after 3 attempts; POST /audit/v1/notifications/test; call publish from
