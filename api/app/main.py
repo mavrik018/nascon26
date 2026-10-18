@@ -25,43 +25,56 @@ app = FastAPI(title="Multi-Sport League & Club Operations Platform", lifespan=li
 errors.install(app)
 
 
-@app.middleware("http")
-async def limit_body_size(request: Request, call_next):
-    length = request.headers.get("content-length")
-    if length is not None and length.isdigit() and int(length) > MAX_BODY_BYTES:
-        return errors.envelope(413, "PAYLOAD_TOO_LARGE", "Request body exceeds 1 MB")
-    if length is None and request.method in ("POST", "PUT", "PATCH"):
-        body = await request.body()  # chunked upload: measure the real body
-        if len(body) > MAX_BODY_BYTES:
-            return errors.envelope(413, "PAYLOAD_TOO_LARGE", "Request body exceeds 1 MB")
-    return await call_next(request)
-
-
 WRITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 
 
-@app.middleware("http")
-async def guest_write_block(request: Request, call_next):
-    """Part II 5.7 / FR-4.3: a guest_* bearer token may never mutate anything, on any route (server-side, not UI)."""
-    from .modules import day2
-    token = day2.bearer(request)
-    if request.method in WRITE_METHODS and day2.is_guest_token(token):
-        e = day2.guest_forbidden(token)
-        return errors.envelope(e.status, e.code, e.message, e.details)
-    return await call_next(request)
+class Guards:
+    """One plain ASGI middleware (NFR-2: the BaseHTTPMiddleware style cost ~10 ms CPU per request), in order:
+    1. spec 5.13 rate limit on /api/v1/* per client IP (/audit/v1/* and /health exempt);
+    2. Part II 5.7 / FR-4.3: a guest_* bearer may never mutate anything, on any route (server-side, not UI);
+    3. spec 5.2: request bodies over 1 MB -> 413 (chunked uploads are measured)."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        from .modules import day2, rbac
+        request = Request(scope)
+        if scope["path"].startswith("/api/v1/"):
+            retry = rbac.check_rate_limit(rbac.client_ip(request))
+            if retry is not None:
+                return await errors.envelope(429, "RATE_LIMITED", "Too many requests", {"retry_after": retry},
+                                             {"Retry-After": str(retry)})(scope, receive, send)
+            scope[rbac.RATE_LIMIT_SCOPE_FLAG] = True
+        method = scope["method"]
+        token = day2.bearer(request)
+        if method in WRITE_METHODS and day2.is_guest_token(token):
+            e = day2.guest_forbidden(token)
+            return await errors.envelope(e.status, e.code, e.message, e.details)(scope, receive, send)
+        length = request.headers.get("content-length")
+        if length is not None and length.isdigit() and int(length) > MAX_BODY_BYTES:
+            return await errors.envelope(413, "PAYLOAD_TOO_LARGE", "Request body exceeds 1 MB")(scope, receive, send)
+        if length is None and method in ("POST", "PUT", "PATCH"):
+            chunks, size, more = [], 0, True  # chunked upload: read it all, measure, then replay it
+            while more:
+                message = await receive()
+                chunks.append(message)
+                size += len(message.get("body", b""))
+                more = message.get("more_body", False)
+            if size > MAX_BODY_BYTES:
+                return await errors.envelope(413, "PAYLOAD_TOO_LARGE", "Request body exceeds 1 MB")(scope, receive, send)
+            pending = iter(chunks)
+
+            async def replay():
+                return next(pending, None) or await receive()
+
+            return await self.app(scope, replay, send)
+        return await self.app(scope, receive, send)
 
 
-@app.middleware("http")
-async def rate_limit(request: Request, call_next):
-    """Spec 5.13: every /api/v1/* path is limited per client IP; /audit/v1/* and /health are exempt."""
-    from .modules import rbac
-    if request.url.path.startswith("/api/v1/"):
-        retry = rbac.check_rate_limit(rbac.client_ip(request))
-        if retry is not None:
-            return errors.envelope(429, "RATE_LIMITED", "Too many requests", {"retry_after": retry},
-                                   {"Retry-After": str(retry)})
-        request.scope[rbac.RATE_LIMIT_SCOPE_FLAG] = True
-    return await call_next(request)
+app.add_middleware(Guards)
 
 
 for module in MODULES:

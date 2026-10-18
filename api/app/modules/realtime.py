@@ -28,8 +28,25 @@ _ws_connections = 0
 
 
 def active_ws_connections() -> int:
-    """Read by /metrics (nascon_active_ws_connections)."""
+    """Read by /metrics (nascon_active_ws_connections): summed over all API workers via Redis."""
+    from .. import redis_kv
+    if redis_kv.enabled():
+        try:
+            return max(0, int(redis_kv.command("GET", "ws:active") or 0))
+        except (OSError, RuntimeError, ValueError):
+            pass
     return _ws_connections
+
+
+def _ws_count(delta: int) -> None:
+    global _ws_connections
+    _ws_connections += delta
+    from .. import redis_kv
+    if redis_kv.enabled():
+        try:
+            redis_kv.command("INCRBY", "ws:active", delta)
+        except (OSError, RuntimeError):
+            pass
 
 
 def reset(conn, seed: int, body: dict) -> None:
@@ -121,14 +138,13 @@ async def public_match_stream(match_id: str, request: Request):
 
 @router.websocket("/ws/matches/{match_id}")
 async def match_socket(websocket: WebSocket, match_id: str):
-    global _ws_connections
     try:
         fp, view = await run_in_threadpool(_snapshot, match_id)
     except Exception:
         await websocket.close(code=4404)
         return
     await websocket.accept()
-    _ws_connections += 1
+    _ws_count(1)
     try:
         await websocket.send_json(view)
         while True:
@@ -139,4 +155,4 @@ async def match_socket(websocket: WebSocket, match_id: str):
     except (WebSocketDisconnect, RuntimeError):
         pass
     finally:
-        _ws_connections -= 1
+        _ws_count(-1)

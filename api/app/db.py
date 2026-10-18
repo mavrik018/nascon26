@@ -10,7 +10,8 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://league:league-local-
 pool = ConnectionPool(
     DATABASE_URL,
     min_size=2,
-    max_size=30,
+    # Several uvicorn workers share Postgres' 100 connections: DB_POOL_MAX per worker (compose sets it).
+    max_size=int(os.environ.get("DB_POOL_MAX", "30")),
     open=False,
     kwargs={"row_factory": dict_row},
     # Connections killed by a DB restart are detected before use (no 500s).

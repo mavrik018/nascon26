@@ -1,4 +1,4 @@
-# Start: docker compose up -d --build --wait   ->  API on http://localhost:8080
+﻿# Start: docker compose up -d --build --wait   ->  API on http://localhost:8080
 # Every value has a default so a clean clone runs with no .env file.
 # DAY1_SALT is passed through from the environment only; it is never stored here.
 
@@ -28,6 +28,8 @@ services:
       DAY2_SALT: ${DAY2_SALT}
       JWT_SECRET: ${JWT_SECRET:-change-me-local-only}
       REDIS_HOST: redis
+      API_WORKERS: ${API_WORKERS:-8}
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
       MEDIA_API_URL: http://mediamtx:9997
     ports:
       - "8080:8080"

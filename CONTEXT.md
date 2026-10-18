@@ -3,7 +3,7 @@
 **Resume anywhere:** `git pull`, read this file, continue the next unticked row you own. Update your rows +
 "Last updated" and push at least once per window. Laptop 2's detailed instructions: `LAPTOP2_PLAN.md`.
 
-_Last updated: Sun 18 Oct 2026, 11:57 PKT (Laptop 2) — times are from the laptop clock (`date`)_
+_Last updated: Sun 18 Oct 2026, 12:16 PKT (Laptop 1) — L1 is OUT OF TOKENS until ~13:15; Laptop 2 takes over_
 
 ## Hard rules (Day 2 PDF, binding)
 - Freeze 14:00, final push **14:05:00 PKT**. Push in every window: W1 ✅ · W2 ✅ · W3 12:45–13:45 (NOT yet pushed) · W4 13:45–14:05.
@@ -41,6 +41,39 @@ _Last updated: Sun 18 Oct 2026, 11:57 PKT (Laptop 2) — times are from the lapt
 | L2-4 | Flutter `nascon://` deep links + APK | L2 | ✅ APK rebuilt again: the Co-Stream screen loads chat even when the session lookup fails |
 | L2-5 | `tests/appium/test_mobile_deeplink.py` | L2 | ✅ 11:57: **3/3 PASS against L1** (emulator, app → L1 via a forwarder on L2:8080; compose Grid browser → L1). Cross-surface chat reached both the app and the browser in ≤3 s. Cold launch WaitTime 1.26–1.29 s (only the very first launch after a fresh install: 3.1 s). Report in `tests/reports/appium-report.xml` |
 | L2-6 | `.github/workflows/autograde.yml` | L2 | ✅ needs GitHub repo secrets `DAY1_SALT` / `DAY2_SALT` (team sets them in GitHub settings) |
+
+
+## >>> HANDOFF TO LAPTOP 2 (12:16) — remaining work, in priority order <<<
+L1 audit of every Part II FR/NFR vs code (12:05). Done & tested: all /audit/v1/* contracts (5.4–5.9), guest 403, cart merge,
+QR, moderation/DLQ, metrics, privacy, WS/SSE <500 ms, real RTMP→HLS + revoke kick, Selenium 3/3, Appium 3/3.
+Performance work done 12:16 (commit below): 8 uvicorn workers, rate limit + WS counter shared via Redis (`api/app/redis_kv.py`),
+one pure-ASGI middleware (`Guards` in main.py), clean chat skips the room lock. k6 inside the docker network
+(`docker run --rm --network league_default -v "$PWD/tests:/t" grafana/k6:0.54.0 run -e API_URL=http://api:8080 /t/k6_load.js`):
+**0 failed, 771 req/s, p95 1.24 s** (was 6.5 s). On Windows, k6 from the host gets "connection refused" from Docker Desktop's port
+proxy — measure inside the network or from another laptop.
+
+1. **FR-3.1 athlete profile + follow/unfollow** (`GET /api/v1/athletes/{id}`, `PUT/DELETE /api/v1/athletes/{id}/follow`,
+   `/follow/toggle`; tables follows + athlete_stats; advisory lock per athlete; counter == row count under bursts).
+   An L1 background agent was building this on branch `day2-social` in a local worktree on L1 — it will NOT be pushed while L1 is
+   out. **L2: implement it yourself** in a new `api/app/modules/social.py` + `tests/test_day2_social.py`, add `social` to
+   `api/app/modules/__init__.py`.
+2. **FR-3.3 host controls + FR-5.2 notification bus** (same situation, L1 agent branch `day2-host-notify` won't be pushed).
+   L2: `api/app/modules/hostctl.py` (POST /api/v1/costream/{id}/invites signed with sign_day2, /join, /controls mute|spotlight|kick,
+   GET /api/v1/public/costream/{id}/state) and `notify.py` (publish → notifications table + SSE /api/v1/notifications/stream?topic=,
+   simulate_dlq → moderation_dlq.deliver → notification_dlq after 3 attempts; POST /audit/v1/notifications/test; call publish from
+   store.change_status for order status events). Tests for each.
+3. **Seed `cs-session-101`** on reset (L2 request): in `api/app/modules/costream.py` reset, create the spec example session
+   (host player-alpha-1, participants alpha-1, alpha-2, beta-1, beta-2, grid_4, no drop) via the same evaluate/store function.
+4. **NFR-2 p95 < 800 ms:** still 1.24 s in-network on L1 (k6 shares CPU). Options: run k6 from L2 against L1 again and report;
+   `uvicorn[standard]` (httptools+uvloop) would cut ~30% CPU — needs the team's OK for the extra package.
+5. **FR-3.2 recording to MinIO + VOD index:** MinIO at 172.15.33.178:9000 (bucket vod). Add to `infra/mediamtx.yml`
+   `pathDefaults: record: yes, recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f, recordFormat: fmp4` + a volume, then on
+   stream key revoke/stop upload segments to MinIO and insert a `vod_recordings(stream_key, player_id, object_url, started_at,
+   ended_at)` row (S3 PUT needs SigV4 — or use `mc`/boto3 if the team approves a package). Lower priority than 1–4.
+6. **TRACEABILITY.md Part II rows + README Part II section** (spec 3: every FR-3.x/4.x/5.x + NFR id → file + tests).
+7. Before 13:40: full backend suite, `docker compose up -d --build --wait`, reset, Selenium `pytest -n 3 tests/selenium`, k6,
+   regenerate COVERAGE_DAY2.json (`python tools/coverage_report.py reports/coverage.json --day2`), commit reports, push in W3
+   (12:45–13:45) and W4 (13:45–14:05). Close the app's Co-Stream screen during rate-limit checks (it polls L1 /api/v1 and shares the IP).
 
 ## Requests between laptops
 - **L2 → L1 (11:57, k6 / NFR-2):** under 550 VUs your API's p95 is 6.1 s (needs <800 ms). There are no errors; it's queueing. Likely causes: a single uvicorn

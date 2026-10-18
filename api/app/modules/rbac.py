@@ -23,6 +23,7 @@ import hmac
 import math
 import threading
 import time
+import uuid
 
 from fastapi import APIRouter, Depends, Request
 from starlette.concurrency import run_in_threadpool
@@ -281,7 +282,17 @@ _hits_lock = threading.Lock()
 
 def check_rate_limit(client_ip: str, now: float | None = None) -> int | None:
     """Record one request from client_ip. Returns None when allowed, otherwise the
-    Retry-After seconds (integer >= 1). Rejected requests are not recorded."""
+    Retry-After seconds (integer >= 1). Rejected requests are not recorded.
+    With Redis (several API workers) the window is shared by all workers; otherwise in-process."""
+    from .. import redis_kv
+    if now is None and redis_kv.enabled():
+        try:
+            wall = time.time()
+            oldest = redis_kv.command("EVAL", redis_kv.RATE_SCRIPT, 1, f"rl:{_rl_generation()}:{client_ip}",
+                                      repr(wall), RATE_WINDOW_SECONDS, RATE_LIMIT, f"{wall!r}:{uuid.uuid4().hex}")
+            return None if not oldest else max(1, math.ceil(float(oldest) + RATE_WINDOW_SECONDS - wall))
+        except (OSError, RuntimeError):
+            pass  # Redis unreachable: fall back to the per-process window below
     now = _clock() if now is None else now
     with _hits_lock:
         log = _hits.setdefault(client_ip, collections.deque())
@@ -296,9 +307,20 @@ def check_rate_limit(client_ip: str, now: float | None = None) -> int | None:
         return None
 
 
+def _rl_generation() -> str:
+    from .. import redis_kv
+    return redis_kv.command("GET", "rl:gen") or "0"
+
+
 def reset_rate_limits() -> None:
     with _hits_lock:
         _hits.clear()
+    from .. import redis_kv
+    if redis_kv.enabled():
+        try:
+            redis_kv.command("INCR", "rl:gen")  # new key namespace: every window starts empty
+        except (OSError, RuntimeError):
+            pass
 
 
 def rate_limited_error(retry_after: int) -> ApiError:

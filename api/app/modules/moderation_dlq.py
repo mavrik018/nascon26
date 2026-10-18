@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     PRIMARY KEY (chat_room_id, message_id)
 );
 CREATE INDEX IF NOT EXISTS chat_messages_room_seq ON chat_messages (chat_room_id, seq);
+-- One sequence for every room: numbers only ever increase (per room too), with no MAX(seq) scan or room lock.
+CREATE SEQUENCE IF NOT EXISTS chat_seq;
 CREATE TABLE IF NOT EXISTS notification_dlq (
     id         BIGSERIAL PRIMARY KEY,
     event_type TEXT NOT NULL,
@@ -64,6 +66,7 @@ CREATE TABLE IF NOT EXISTS notification_dlq (
 
 def reset(conn, seed: int, body: dict) -> None:
     conn.execute("TRUNCATE chat_messages, moderation_rooms, notification_dlq RESTART IDENTITY")
+    conn.execute("ALTER SEQUENCE chat_seq RESTART WITH 1")
 
 
 # --------------------------------------------------------------------------- moderation rules
@@ -131,9 +134,8 @@ def _store(conn, room: str, m: dict) -> int | None:
     """Insert a message with the next per-room seq; a replayed message_id is ignored (returns None)."""
     row = conn.execute(
         "INSERT INTO chat_messages (chat_room_id, message_id, seq, sender, text, flagged, reason, dropped)"
-        " SELECT %s, %s, COALESCE(MAX(seq), 0) + 1, %s, %s, %s, %s, %s FROM chat_messages WHERE chat_room_id = %s"
-        " ON CONFLICT DO NOTHING RETURNING seq",
-        (room, m["message_id"], m["sender"], m["text"], m["flagged"], m["reason"], m["dropped"], room)).fetchone()
+        " VALUES (%s, %s, nextval('chat_seq'), %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING RETURNING seq",
+        (room, m["message_id"], m["sender"], m["text"], m["flagged"], m["reason"], m["dropped"])).fetchone()
     return row["seq"] if row else None
 
 
@@ -202,17 +204,29 @@ def _validate(body) -> tuple[str, list, int]:
 
 def moderate_probe(body) -> dict:
     room, msgs, simulate = _validate(body)
+    decided, per_sender = [], {}
+    for m in msgs:
+        sender = m["sender"]
+        per_sender[sender] = per_sender.get(sender, 0) + 1
+        if per_sender[sender] > RATE_LIMIT:  # one request = one instant, so the window is the request
+            decided.append((m, ("drop", m["text"], True, REASON_RATE)))
+        else:
+            decided.append((m, classify(m["text"])))
+    # Only requests that change room state (kicked/muted) or the DLQ need the room lock; clean chat
+    # (the NFR-2 load: 50 posters in one room) runs in parallel.
+    changes_state = simulate > 0 or any(c[0] == "drop" or c[2] for _, c in decided)
     with pool.connection() as conn:
-        state = _lock_room(conn, room)
+        conn.execute("SET LOCAL synchronous_commit = off")  # chat rows: no fsync wait on commit
+        if changes_state:
+            state = _lock_room(conn, room)
+        else:
+            conn.execute("INSERT INTO moderation_rooms (chat_room_id) VALUES (%s) ON CONFLICT DO NOTHING", (room,))
+            state = conn.execute("SELECT kicked_users, muted_users FROM moderation_rooms WHERE chat_room_id = %s",
+                                 (room,)).fetchone()
         kicked, muted = list(state["kicked_users"]), list(state["muted_users"])
-        filtered, per_sender = [], {}
-        for m in msgs:
+        filtered = []
+        for m, (action, text, flagged, reason) in decided:
             sender = m["sender"]
-            per_sender[sender] = per_sender.get(sender, 0) + 1
-            if per_sender[sender] > RATE_LIMIT:  # one request = one instant, so the window is the request
-                action, text, flagged, reason = "drop", m["text"], True, REASON_RATE
-            else:
-                action, text, flagged, reason = classify(m["text"])
             if action == "drop":
                 _add(muted, sender)
             elif flagged:
@@ -222,7 +236,8 @@ def moderate_probe(body) -> dict:
             _store(conn, room, {**out, "dropped": action == "drop"})
             if action == "keep":
                 filtered.append(out)
-        _save_room(conn, room, kicked, muted)
+        if changes_state:
+            _save_room(conn, room, kicked, muted)
         for i in range(simulate):
             deliver(conn, "chat_notification", {"chat_room_id": room, "sequence": i + 1}, _simulated_failure,
                     sleep=lambda _: None)
