@@ -8,7 +8,7 @@ import '../core/app_state.dart';
 import '../core/format.dart';
 import '../core/models.dart';
 import 'club_screens.dart' show plainError;
-import 'guest_screens.dart' show BroadcastHubPage;
+import 'guest_screens.dart' show BroadcastHubPage, CoStreamPage, GuestMatchLivePage;
 import 'ocean_widgets.dart';
 import 'onboarding_screens.dart';
 import 'sport_screens.dart';
@@ -344,6 +344,26 @@ class _SignInPageState extends State<SignInPage> {
     }
   }
 
+  /// Guests (FR-4.2): pick a live event and watch read-only, no account and no login wall.
+  Future<void> _viewLive() async {
+    final pick = await showIosPicker<String>(
+      context,
+      title: 'Live events',
+      message: 'Watch without an account. Sign in later to chat or buy.',
+      options: const [
+        PickerOption(value: 'match:match-m1', label: 'Live match · Alpha FC vs Alpha Rovers', icon: Icons.sports_soccer),
+        PickerOption(value: 'costream:cs-session-101', label: 'Co-stream · 4 players live', icon: Icons.grid_view),
+      ],
+    );
+    if (pick == null || !mounted) return;
+    final (kind, id) = (pick.split(':').first, pick.split(':').last);
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => kind == 'match'
+          ? GuestMatchLivePage(state: widget.state, matchId: id)
+          : CoStreamPage(state: widget.state, sessionId: id),
+    ));
+  }
+
   Future<void> _continueAs(Session s) async {
     setState(() => busy = true);
     await widget.state.continueAs(s);
@@ -513,6 +533,15 @@ class _SignInPageState extends State<SignInPage> {
                           ),
                     icon: const Icon(Icons.person_add_alt_1_outlined, size: 18),
                     label: const Text('New player? Create an account'),
+                  ),
+                  const SizedBox(height: 8),
+                  // Guests watch without an account (FR-4.2): read-only live match / co-stream screens.
+                  OutlinedButton.icon(
+                    key: const Key('guest-view-live'),
+                    style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                    onPressed: busy ? null : _viewLive,
+                    icon: const Icon(Icons.live_tv_outlined, size: 18),
+                    label: const Text('View live events (no account needed)'),
                   ),
                   const SizedBox(height: 8),
                   TextButton.icon(

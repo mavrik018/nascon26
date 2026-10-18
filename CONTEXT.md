@@ -3,7 +3,7 @@
 **Resume anywhere:** `git pull`, read this file, continue the next unticked row you own. Update your rows +
 "Last updated" and push at least once per window. Laptop 2's detailed instructions: `LAPTOP2_PLAN.md`.
 
-_Last updated: Sun 18 Oct 2026, 13:36 PKT (Laptop 1) — FINAL VERIFICATION DONE_
+_Last updated: Sun 18 Oct 2026, 13:46 PKT (Laptop 1) — W4 push: guest "View live events" on sign-in_
 
 ## FINAL VERIFICATION (Laptop 1, 13:15–13:36, on main incl. 6d89593)
 - Backend suite: **1356 passed, 2 skipped** (in-process, real Postgres). Flutter: analyze clean, **50/50** tests.
