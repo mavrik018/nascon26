@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Co-Stream · NaSCon Guest Player</title>
+  <link rel="stylesheet" href="/web/static/web.css">
+  <script src="/web/static/web.js" defer></script>
+</head>
+<body data-page="costream">
+  <a class="skip" href="#chat-input">Skip to chat</a>
+  <header class="top">
+    <h1>NaSCon Co-Stream · <span id="session-id"></span></h1>
+    <span class="cart-pill" aria-live="polite">Guest cart
+      <span data-testid="guest-cart-count" aria-label="Items in guest cart">0</span>
+    </span>
+  </header>
+
+  <main class="player">
+    <section aria-label="Co-stream">
+      <div class="stage">
+        <video data-testid="guest-video-player" aria-label="Co-stream video player"
+               controls autoplay muted playsinline preload="auto"></video>
+        <div class="scorebar">
+          <span class="team">Layout: <span id="layout"></span></span>
+        </div>
+      </div>
+      <p id="status" class="muted" role="status" aria-live="polite"></p>
+    </section>
+
+    <aside style="display:grid;gap:16px;align-content:start">
+      <div class="card" aria-labelledby="people-heading">
+        <h2 id="people-heading">On stream</h2>
+        <ul class="participants" id="participants" aria-live="polite"></ul>
+      </div>
+
+      <section class="card chat" aria-labelledby="chat-heading">
+        <h2 id="chat-heading">Live chat</h2>
+        <ul data-testid="chat-message-list" aria-live="polite" aria-label="Chat messages" tabindex="0"></ul>
+        <form id="chat-form">
+          <label class="skip" for="chat-input">Chat message</label>
+          <input id="chat-input" data-testid="chat-input-field" type="text" maxlength="500"
+                 autocomplete="off" placeholder="Say something…" aria-label="Chat message">
+          <button type="submit" data-testid="chat-send-btn" aria-label="Send chat message">Send</button>
+        </form>
+      </section>
+    </aside>
+  </main>
+
+  <div class="backdrop" id="auth-backdrop" hidden>
+    <div data-testid="progressive-auth-modal" role="dialog" aria-modal="true"
+         aria-labelledby="auth-title" aria-describedby="auth-text" hidden>
+      <h2 id="auth-title">Sign in to continue</h2>
+      <p id="auth-text" class="muted">Log in or register to continue.</p>
+      <form id="auth-form">
+        <div class="field">
+          <label for="auth-email">Email</label>
+          <input id="auth-email" type="email" autocomplete="email" required>
+        </div>
+        <div class="field">
+          <label for="auth-password">Password</label>
+          <input id="auth-password" type="password" autocomplete="current-password" required>
+        </div>
+        <p id="auth-error" class="error" role="alert"></p>
+        <div class="row">
+          <button type="submit">Log in</button>
+          <a class="btn ghost" href="nascon://register" style="text-decoration:none;display:inline-flex;align-items:center;background:transparent;color:var(--accent)">Register</a>
+          <button type="button" class="ghost" id="auth-close">Keep watching</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
