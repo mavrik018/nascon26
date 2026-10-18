@@ -17,7 +17,7 @@ def test_fixtures_and_standings_for_tenant_user(api):
     r = api.get("/api/v1/leagues/league-alpha-1/fixtures", headers=h)
     assert r.status_code == 200
     fixtures = r.json()
-    assert len(fixtures) == 6
+    assert len(fixtures) == 7  # 6 Day 1 demo fixtures + match-m1 (Part II seed, spec 5.2)
     first = fixtures[0]
     assert set(first) == {"match_id", "league_id", "home", "away", "status", "scheduled_at", "home_score",
                           "away_score"}

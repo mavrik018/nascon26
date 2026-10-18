@@ -37,6 +37,20 @@ async def limit_body_size(request: Request, call_next):
     return await call_next(request)
 
 
+WRITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
+
+
+@app.middleware("http")
+async def guest_write_block(request: Request, call_next):
+    """Part II 5.7 / FR-4.3: a guest_* bearer token may never mutate anything, on any route (server-side, not UI)."""
+    from .modules import day2
+    token = day2.bearer(request)
+    if request.method in WRITE_METHODS and day2.is_guest_token(token):
+        e = day2.guest_forbidden(token)
+        return errors.envelope(e.status, e.code, e.message, e.details)
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def rate_limit(request: Request, call_next):
     """Spec 5.13: every /api/v1/* path is limited per client IP; /audit/v1/* and /health are exempt."""
