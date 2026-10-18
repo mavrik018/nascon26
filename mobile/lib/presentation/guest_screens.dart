@@ -170,9 +170,16 @@ class _CoStreamPageState extends State<CoStreamPage> with _Polling {
 
   @override
   Future<void> load() async {
-    session = _map(await widget.state.api.get('/api/v1/public/costream/${widget.sessionId}'));
+    // Chat must not depend on the session lookup: fall back to the conventional room id (same as the web player).
+    Object? sessionError;
+    try {
+      session = _map(await widget.state.api.get('/api/v1/public/costream/${widget.sessionId}'));
+    } catch (e) {
+      sessionError = e;
+    }
     final room = session['chat_room_id'] ?? 'chat-${widget.sessionId}';
     chat = _list(await widget.state.api.get('/api/v1/public/chat/$room'));
+    if (sessionError != null) throw sessionError;
   }
 
   @override

@@ -105,6 +105,13 @@ def test_cross_surface_costream_chat(driver):
     from selenium import webdriver as sel
     from selenium.webdriver.support.ui import WebDriverWait
 
+    # Start the co-stream (spec 5.4 example: 4 participants, player-alpha-1 hosting), then the app joins it.
+    r = requests.post(f"{API_BASE}/audit/v1/costream/session", timeout=10, json={
+        "session_id": "cs-session-101", "host_player_id": "player-alpha-1",
+        "participants": ["player-alpha-1", "player-alpha-2", "player-beta-1", "player-beta-2"],
+        "layout": "grid_4", "simulate_host_drop": False,
+    })
+    assert r.status_code in (200, 201), r.text
     open_link(driver, "nascon://stream/cs-session-101")
     wait_desc(driver, "Co-Stream", 2.0)
 

@@ -3,7 +3,7 @@
 **Resume anywhere:** `git pull`, read this file, continue the next unticked row you own. Update your rows +
 "Last updated" and push at least once per window. Laptop 2's detailed instructions: `LAPTOP2_PLAN.md`.
 
-_Last updated: Sun 18 Oct 2026, 11:49 PKT (Laptop 2) — times are from the laptop clock (`date`)_
+_Last updated: Sun 18 Oct 2026, 11:57 PKT (Laptop 2) — times are from the laptop clock (`date`)_
 
 ## Hard rules (Day 2 PDF, binding)
 - Freeze 14:00, final push **14:05:00 PKT**. Push in every window: W1 ✅ · W2 ✅ · W3 12:45–13:45 (NOT yet pushed) · W4 13:45–14:05.
@@ -37,12 +37,17 @@ _Last updated: Sun 18 Oct 2026, 11:49 PKT (Laptop 2) — times are from the lapt
 | 13 | Cold start ≤120 s check; `nascon_stream_bitrate_kbps` from MediaMTX | L1 | ⏳ |
 | L2-1 | Guest Web Player HTML/JS | L2 | ✅ |
 | L2-2 | `tests/selenium/test_guest_grid.py` | L2 | ✅ 3/3 real Grid (both laptops) |
-| L2-3 | `tests/k6_load.js` + real summary | L2 | 🟡 all endpoints exist now → run against L1 `http://<L1 IP>:8080` |
-| L2-4 | Flutter `nascon://` deep links + APK | L2 | ✅ APK rebuilt 11:32 |
-| L2-5 | `tests/appium/test_mobile_deeplink.py` | L2 | 🟡 2 deep links PASS; cross-surface test can run now (chat routes merged) |
+| L2-3 | `tests/k6_load.js` + real summary | L2 | ❌ ran 11:5x from L2 against L1 (172.15.33.181), 550 VUs/15 s: **0 failed requests** (1837 reqs, all checks pass) but **p95 6.1 s → `p(95)<800` FAILS**. The time is server wait (TTFB p95 6.0 s; TCP connect p95 87 ms; idle latency 20–70 ms). Real summary committed in `tests/reports/k6-summary.json`. Needs L1 (request below) |
+| L2-4 | Flutter `nascon://` deep links + APK | L2 | ✅ APK rebuilt again: the Co-Stream screen loads chat even when the session lookup fails |
+| L2-5 | `tests/appium/test_mobile_deeplink.py` | L2 | ✅ 11:57: **3/3 PASS against L1** (emulator, app → L1 via a forwarder on L2:8080; compose Grid browser → L1). Cross-surface chat reached both the app and the browser in ≤3 s. Cold launch WaitTime 1.26–1.29 s (only the very first launch after a fresh install: 3.1 s). Report in `tests/reports/appium-report.xml` |
 | L2-6 | `.github/workflows/autograde.yml` | L2 | ✅ needs GitHub repo secrets `DAY1_SALT` / `DAY2_SALT` (team sets them in GitHub settings) |
 
 ## Requests between laptops
+- **L2 → L1 (11:57, k6 / NFR-2):** under 550 VUs your API's p95 is 6.1 s (needs <800 ms). There are no errors; it's queueing. Likely causes: a single uvicorn
+  worker, sync handlers on the threadpool (40 threads by default), a small DB pool, or a DB write per QR inspect (scan telemetry). Re-run:
+  `k6 run -e API_URL=http://localhost:8080 --summary-export=tests/reports/k6-summary.json tests/k6_load.js` (or ask L2).
+- **L2 → L1:** `cs-session-101` does not exist after `/audit/v1/reset` (public costream → 404). The Appium test now creates it via
+  `POST /audit/v1/costream/session`. Consider seeding it if the grader opens `/web/costream/cs-session-101` without creating it first.
 - **L1 → L2 (MinIO, 11:45) — please do first:** run MinIO on your laptop:
   `docker run -d --name minio -p 9000:9000 -p 9001:9001 -e MINIO_ROOT_USER=nascon -e MINIO_ROOT_PASSWORD=nascon-local-only <your-minio-image> server /data --console-address :9001`
   (or `minio.exe server C:\minio-data --console-address :9001`). Create bucket `vod`. Then write here: your LAN IP,
