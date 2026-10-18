@@ -17,7 +17,7 @@ from starlette.concurrency import run_in_threadpool
 
 from ..db import pool
 from ..errors import not_found
-from . import scoring
+from . import scoring, streaming
 
 router = APIRouter()
 
@@ -56,7 +56,8 @@ def reset(conn, seed: int, body: dict) -> None:
 def _fingerprint(conn, match_id: str):
     return conn.execute(
         "SELECT (SELECT count(*) FROM scoring_events WHERE match_id = %(m)s) AS n, m.pinned_product_id, "
-        "m.scheduled_at FROM scoring_matches m WHERE m.match_id = %(m)s", {"m": match_id}).fetchone()
+        "m.scheduled_at, (SELECT max(updated_at) FROM stream_keys) AS keys_at "  # a team player goes live
+        "FROM scoring_matches m WHERE m.match_id = %(m)s", {"m": match_id}).fetchone()
 
 
 def public_match(conn, match_id: str) -> dict:
@@ -79,7 +80,9 @@ def public_match(conn, match_id: str) -> dict:
         "away": {"team_id": p["away"]["team_id"], "score": p["away"]["score"]},
         "score_text": f"{p['home']['score']} - {p['away']['score']}",
         "version": p["version"],
-        "playback_url": f"http://localhost:8888/matches/{match_id}/index.m3u8",
+        # A player of either team broadcasting with an active stream key is the match's live video (FR-3.2).
+        "playback_url": streaming.live_playback_url(conn, club_ids=(p["home"]["team_id"], p["away"]["team_id"]))
+        or f"http://localhost:8888/matches/{match_id}/index.m3u8",
         "pinned_product": pinned,
         "chat_room_id": f"chat-{match_id}",
     }

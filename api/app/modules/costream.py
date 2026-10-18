@@ -11,6 +11,7 @@ from psycopg.types.json import Jsonb
 from ..db import pool
 from ..errors import ApiError, conflict, not_found, validation
 from ..signing import canonical, sign_day2
+from . import streaming
 from .day2 import player_exists
 from .util import read_json
 
@@ -121,6 +122,13 @@ def public_costream(session_id: str):
     """Guest web page view: no auth, no signature."""
     with pool.connection() as conn:
         row = conn.execute("SELECT response FROM costream_sessions WHERE session_id = %s", (session_id,)).fetchone()
-    if row is None:
-        raise not_found("STREAM_NOT_FOUND", session_id=session_id)
-    return {k: v for k, v in row["response"].items() if k != "signature"}
+        if row is None:
+            raise not_found("STREAM_NOT_FOUND", session_id=session_id)
+        view = {k: v for k, v in row["response"].items() if k != "signature"}
+        # No server-side mixer: the guest page plays the active host's own broadcast (host first, then participants).
+        host = view.get("active_host")
+        people = [host] + [p for p in view.get("active_participants") or [] if p != host]
+        live = streaming.live_playback_url(conn, player_ids=tuple(p for p in people if p))
+        if live:
+            view["composite_playback_url"] = live
+    return view

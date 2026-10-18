@@ -581,7 +581,11 @@ class _PlayerPageState extends State<PlayerPage> {
       if (!mounted) return;
       setState(() {
         loaded = r;
-        if (ath != null && ath.isNotEmpty) athlete = ath;
+        if (ath != null && ath.isNotEmpty) {
+          athlete = ath;
+          // The server remembers follows: show the saved state, so the button never starts at "Follow" again.
+          if (ath['following'] is bool) following = ath['following'] as bool;
+        }
         loading = false;
       });
     } catch (e) {

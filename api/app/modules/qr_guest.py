@@ -9,6 +9,7 @@ retries serialise; the first merges, the rest replay the stored response (never 
 Merging fills a cart only; inventory is neither reserved nor decremented.
 """
 import io
+import os
 
 import segno
 from fastapi import APIRouter, Request
@@ -186,6 +187,11 @@ def export_qr(entity_id: str, fmt: str):
     with pool.connection() as conn:
         qr = _mapping(conn, entity_id)
     url = short_url(qr)
+    # The printed / scanned code must reach the server from a phone: PUBLIC_BASE_URL (e.g. http://<LAN IP>:8080)
+    # replaces localhost in the image only. The signed JSON contract keeps the spec's localhost short_url.
+    public = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
+    if public:
+        url = public + url[len(BASE_URL):]
     code, buf = segno.make(url, error="m"), io.BytesIO()
     code.save(buf, kind="svg" if fmt == "svg" else "png", scale=10, border=4)
     body = _pdf(buf.getvalue(), entity_id, url) if fmt == "pdf" else buf.getvalue()

@@ -47,6 +47,17 @@ def active_key(conn, key) -> bool:
         "SELECT 1 FROM stream_keys WHERE stream_key = %s AND status = 'active'", (key,)).fetchone() is not None
 
 
+def live_playback_url(conn, player_ids=(), club_ids=()) -> str | None:
+    """HLS URL of the newest active stream key held by one of these players / a player of these clubs, else None.
+    Lets the guest match / co-stream pages play the real broadcast (publishing is only allowed on live/{key})."""
+    row = conn.execute(
+        "SELECT k.stream_key FROM stream_keys k LEFT JOIN rbac_players p ON p.player_id = k.player_id "
+        "WHERE k.status = 'active' AND (k.player_id = ANY(%s::text[]) OR p.club_id = ANY(%s::text[])) "
+        "ORDER BY k.player_id = ANY(%s::text[]) DESC, k.updated_at DESC LIMIT 1",
+        (list(player_ids), list(club_ids), list(player_ids[:1]))).fetchone()
+    return f"http://localhost:8888/live/{row['stream_key']}/index.m3u8" if row else None
+
+
 def key_view(player_id: str, label: str, stream_key: str, status: str) -> dict:
     live = status == "active"
     return {

@@ -32,6 +32,8 @@ services:
       DB_POOL_MAX: ${DB_POOL_MAX:-10}
       MEDIA_API_URL: http://mediamtx:9997
       # FR-3.2: finished recordings go to S3-compatible storage (MinIO). Unset -> indexed only, no upload.
+      # Address phones use to reach this API (e.g. http://172.15.33.181:8080): encoded in exported QR images.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
       MINIO_URL: ${MINIO_URL:-}
       MINIO_BUCKET: ${MINIO_BUCKET:-vod}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-}
