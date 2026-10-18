@@ -61,9 +61,32 @@
     });
   }
 
+  // A media server answering 401 + WWW-Authenticate would make the browser pop a credential dialog for
+  // <video src> (FR-4.2: zero credential dialogs; the dialog also swallows every click on the page).
+  // So probe first with fetch(credentials: 'omit'), which never prompts, and attach only a playable stream;
+  // until then keep retrying (the stream may simply not be live yet).
+  let probeTimer = null;
+
+  async function streamPlayable(url) {
+    try {
+      const res = await fetch(url, { credentials: 'omit', cache: 'no-store' });
+      return res.ok;
+    } catch (_) {
+      return false;
+    }
+  }
+
   async function attachVideo(url) {
     const video = byTestId('guest-video-player');
-    if (!video || !url || video.dataset.src === url) return;
+    if (!video || !url || video.dataset.src === url || video.dataset.probing === url) return;
+    video.dataset.probing = url;
+    clearTimeout(probeTimer);
+    if (!(await streamPlayable(url))) {
+      delete video.dataset.probing;
+      probeTimer = setTimeout(() => attachVideo(url), 5000);
+      return;
+    }
+    delete video.dataset.probing;
     video.dataset.src = url;
     const isHls = /\.m3u8(\?|$)/.test(url);
     if (!isHls || video.canPlayType('application/vnd.apple.mpegurl')) {

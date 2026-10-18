@@ -3,7 +3,7 @@
 **Resume anywhere:** `git pull`, read this file, continue your next unticked row. Update your rows + "Last updated"
 and push at least once per window. Laptop 2's detailed instructions: `LAPTOP2_PLAN.md`.
 
-_Last updated: Sun 18 Oct 2026, 11:40 PKT (Laptop 2)_
+_Last updated: Sun 18 Oct 2026, 11:50 PKT (Laptop 2)_
 
 ## Hard rules (Day 2 PDF, binding)
 - Freeze 14:00, final push **14:05:00 PKT**. Push in every window: W1 10:15–11:30 ✅ · W2 11:30–12:45 · W3 12:45–13:45 · W4 13:45–14:05.
@@ -30,14 +30,18 @@ _Last updated: Sun 18 Oct 2026, 11:40 PKT (Laptop 2)_
 | 9 | WebSocket `/ws/matches/{id}` score push (NFR-1) | L1 | ✅ /ws/matches/{id} in realtime.py |
 | 10 | Compose: MediaMTX, MinIO, Redis, Selenium hub + 3 nodes; ≤120 s | L1 | ✅ redis + mediamtx (1935/8888/8889) + hub + 3 nodes 4.24.0; /health checks redis+media; MinIO blocked (image pull denied — waiting for team) |
 | 11 | COVERAGE_DAY2.json (measured), TRACEABILITY.md Part II rows | L1 | ⏳ |
-| L2-1 | Guest Web Player HTML/JS (9 data-testids, WCAG) | L2 | ✅ code in `api/app/web/` (assets via `/web/static/`). Verified 11:20 with the Selenium suite against a local mock of the contract (3/3); not yet against the real stack |
-| L2-2 | `tests/selenium/test_guest_grid.py` (3 tests, -n 3) | L2 | 🟡 3/3 vs mock; vs real API (52c414b, local) tests 2+3 PASS, test 1 waited on `/q` (now pushed by L1, re-running) |
+| L2-1 | Guest Web Player HTML/JS (9 data-testids, WCAG) | L2 | ✅ `api/app/web/` (assets via `/web/static/`). Never triggers a browser credential dialog: the stream is probed with `fetch(credentials:'omit')` before it is attached |
+| L2-2 | `tests/selenium/test_guest_grid.py` (3 tests, -n 3) | L2 | ✅ 11:50: **3/3 PASS** with the bare `pytest -n 3 tests/selenium/` on the compose Grid (hub + 3 nodes, project `l2check` on Laptop 2, code at 0da1bef + web fix). Real report in `tests/reports/selenium-report.xml` |
 | L2-3 | `tests/k6_load.js` + real k6 summary | L2 | 🟡 script committed (spec 6.4 profile, `-e API_URL=`). Summary pending L1 rows 5 + 7 |
 | L2-4 | Flutter `nascon://` deep links + APK | L2 | ✅ intent-filter + MethodChannel (no new dependency) + Match Live / Co-Stream guest screens. `flutter analyze` clean, `flutter test` 50/50. Release APK rebuilt 11:32 → `mobile/release/app-release.apk` |
 | L2-5 | `tests/appium/test_mobile_deeplink.py` | L2 | 🟡 2 deep-link tests PASS on emulator (Pixel 9 Pro XL AVD, cold start WaitTime ~1.1 s). Cross-surface test waits on `/audit/v1/moderation/test` (L1 row 7) + public chat |
 | L2-6 | `.github/workflows/autograde.yml` | L2 | ✅ written (YAML valid). Needs repo secrets `DAY1_SALT` / `DAY2_SALT` set on GitHub by the team |
 
 ## Requests between laptops
+- **L2 → L1** (11:50, important): MediaMTX answers `playback_url` (`:8888/matches/match-m1/index.m3u8`) with **401 + `WWW-Authenticate: Basic`**.
+  In a browser that pops a credential dialog (spec FR-4.2 forbids that), and the dialog swallowed every click, so Selenium tests 2+3 failed
+  until I patched the player. The player now probes first and never prompts. Guests still need HLS **read** without
+  credentials (MediaMTX `authInternalUsers` read for any user, or a read token in the URL), otherwise the video never plays.
 - **L2 → L1** (11:21): `GET /api/v1/public/chat/{room}` is still missing (**L1: agent C is building it with /api/v1/chat, merging ~12:00**). The web + app chat poll it every second. Messages accepted by
   `/audit/v1/moderation/test` should show up there, because the cross-surface Appium test posts through that route.
 - **L2 → L1**: keep the compose service name `api`. The Grid browsers run in containers, so the Selenium suite probes the
