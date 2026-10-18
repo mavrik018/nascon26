@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/app_state.dart';
+import '../core/deep_links.dart';
 import '../core/format.dart';
 import 'club_screens.dart';
+import 'guest_screens.dart';
 import 'league_screens.dart';
 import 'ocean_widgets.dart';
 import 'onboarding_screens.dart';
@@ -25,11 +27,13 @@ class _ClublineAppState extends State<ClublineApp> {
   final _navigatorKey = GlobalKey<NavigatorState>();
   final _messengerKey = GlobalKey<ScaffoldMessengerState>();
   StreamSubscription<String>? _messages;
+  StreamSubscription<DeepLink>? _links;
   String? _lastUser;
 
   @override
   void initState() {
     super.initState();
+    _links = DeepLinks.links.listen(_openLink);
     _messages = widget.state.messages.listen((m) {
       final messenger = _messengerKey.currentState;
       if (messenger != null) toastOn(messenger, m, kind: m.contains('rejected') ? ToastKind.error : ToastKind.success);
@@ -45,9 +49,38 @@ class _ClublineAppState extends State<ClublineApp> {
     }
   }
 
+  /// nascon:// links open their screen on top of whatever is showing (sign-in included): read-only as guest.
+  Future<void> _openLink(DeepLink link) async {
+    final state = widget.state;
+    if (!state.ready) {
+      final ready = Completer<void>();
+      void check() {
+        if (state.ready && !ready.isCompleted) ready.complete();
+      }
+      state.addListener(check);
+      await ready.future;
+      state.removeListener(check);
+    }
+    final Widget page;
+    switch (link.kind) {
+      case DeepLinkKind.match:
+        page = GuestMatchLivePage(state: state, matchId: link.id);
+      case DeepLinkKind.costream:
+        page = CoStreamPage(state: state, sessionId: link.id);
+      case DeepLinkKind.entity:
+        return;
+    }
+    // After the frame that applied `ready` (and any session-change popUntil in _onState).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _navigatorKey.currentState?.push(MaterialPageRoute<void>(builder: (_) => page));
+    });
+    WidgetsBinding.instance.scheduleFrame();
+  }
+
   @override
   void dispose() {
     _messages?.cancel();
+    _links?.cancel();
     widget.state.removeListener(_onState);
     super.dispose();
   }
