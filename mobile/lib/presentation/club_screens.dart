@@ -676,6 +676,7 @@ class _PlayerPageState extends State<PlayerPage> {
                 ],
               ),
               const SizedBox(height: 12),
+              if (widget.state.user?.playerId != widget.playerId)
               FilledButton.icon(
                 key: const Key('follow-athlete-btn'),
                 style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(44)),

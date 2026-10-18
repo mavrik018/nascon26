@@ -11,6 +11,7 @@ from fastapi import APIRouter, Request
 
 from .. import auth
 from ..db import pool
+from ..errors import ApiError
 from . import day2, roster, scoring
 
 router = APIRouter()
@@ -119,16 +120,19 @@ def athlete_profile(player_id: str, request: Request):
 
 # --------------------------------------------------------------------------- follow graph
 
-def _follower(request: Request) -> str:
+def _follower(request: Request, athlete_id: str | None = None) -> str:
     token = day2.bearer(request)
     if token is None:  # FR-4.3: an anonymous caller is treated like a guest (the middleware covers guest_*)
         raise day2.guest_forbidden(None)
-    return auth.decode_token(token)["sub"]
+    claims = auth.decode_token(token)
+    if athlete_id is not None and claims.get("player_id") == athlete_id:  # a player cannot follow himself
+        raise ApiError(400, "CANNOT_FOLLOW_SELF", "You cannot follow your own profile", {"athlete_id": athlete_id})
+    return claims["sub"]
 
 
 def _apply(request: Request, athlete_id: str, want) -> dict:
     """want: True follow, False unfollow, None toggle. Serialised per athlete; counter moves only on a real change."""
-    follower_id = _follower(request)
+    follower_id = _follower(request, athlete_id)
     with pool.connection() as conn:
         day2.require_player(conn, athlete_id)
         conn.execute("SELECT pg_advisory_xact_lock(hashtext('follow:' || %s))", (athlete_id,))

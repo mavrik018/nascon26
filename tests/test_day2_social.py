@@ -3,7 +3,7 @@ import random
 import threading
 
 PASSWORD = "Nascon@26"
-USERS = ["player", "viewer", "manager", "organizer", "admin"]
+USERS = ["viewer", "manager", "organizer", "admin"]  # not "player": that account IS the athlete (no self-follow)
 ATHLETE = "player-alpha-1"
 
 
@@ -53,19 +53,19 @@ def test_profile_shape_career_upcoming_and_404(api):
 
 def test_follow_unfollow_idempotent(api):
     api.reset()
-    h = auth(token(api))
+    h = auth(token(api, "viewer"))
     url = f"/api/v1/athletes/{ATHLETE}/follow"
     for _ in range(2):
         r = api.put(url, headers=h)
         assert r.status_code == 200, r.text
-        assert r.json() == {"athlete_id": ATHLETE, "follower_id": "user-player", "following": True,
+        assert r.json() == {"athlete_id": ATHLETE, "follower_id": "user-viewer", "following": True,
                             "followers_count": 1}
     assert api.get(f"/api/v1/athletes/{ATHLETE}").json()["followers_count"] == 1
     for _ in range(2):
         r = api.delete(url, headers=h)
         assert r.status_code == 200 and r.json()["following"] is False and r.json()["followers_count"] == 0
     assert api.post(url + "/toggle", headers=h).json()["following"] is True
-    assert api.post(url + "/toggle", headers=h).json() == {"athlete_id": ATHLETE, "follower_id": "user-player",
+    assert api.post(url + "/toggle", headers=h).json() == {"athlete_id": ATHLETE, "follower_id": "user-viewer",
                                                            "following": False, "followers_count": 0}
     r = api.put("/api/v1/athletes/player-nobody/follow", headers=h)
     assert r.status_code == 404 and r.json()["error"]["code"] == "PLAYER_NOT_FOUND"
@@ -130,3 +130,12 @@ def test_profile_remembers_that_the_viewer_follows(api):
     assert api.get(f"/api/v1/athletes/{ATHLETE}").json()["following"] is False  # anonymous reader
     assert api.get(f"/api/v1/athletes/{ATHLETE}", headers=auth("guest_anon_tok_7721")).json()["following"] is False
     assert api.get(f"/api/v1/athletes/{ATHLETE}", headers=auth("not-a-jwt")).json()["following"] is False
+
+
+def test_player_cannot_follow_himself(api):
+    api.reset()
+    tok = token(api, "player")  # player@nascon.test is player-alpha-1
+    for r in (api.put(f"/api/v1/athletes/{ATHLETE}/follow", headers=auth(tok)),
+              api.post(f"/api/v1/athletes/{ATHLETE}/follow/toggle", headers=auth(tok))):
+        assert r.status_code == 400 and r.json()["error"]["code"] == "CANNOT_FOLLOW_SELF"
+    assert api.get(f"/api/v1/athletes/{ATHLETE}").json()["followers_count"] == 0
