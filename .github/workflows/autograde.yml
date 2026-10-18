@@ -1,0 +1,76 @@
+# Day 2 autograder rehearsal (spec 1.x / 6.x): full stack on one clean Ubuntu runner, then backend tests,
+# the Selenium Grid suite (3 parallel sessions) and a k6 smoke. Salts come only from repository secrets.
+name: autograde
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  autograde:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Write .env from repository secrets (never literal values)
+        env:
+          DAY1_SALT: ${{ secrets.DAY1_SALT }}
+          DAY2_SALT: ${{ secrets.DAY2_SALT }}
+        run: |
+          umask 077
+          printf 'DAY1_SALT=%s\nDAY2_SALT=%s\n' "$DAY1_SALT" "$DAY2_SALT" > .env
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install test tooling
+        run: |
+          pip install -r tests/requirements.txt -r tests/selenium/requirements.txt
+          curl -sSL https://github.com/grafana/k6/releases/download/v0.54.0/k6-v0.54.0-linux-amd64.tar.gz \
+            | tar xz --strip-components=1 -C /usr/local/bin k6-v0.54.0-linux-amd64/k6
+
+      - name: docker compose up (must be healthy within 120 s)
+        run: |
+          start=$(date +%s)
+          docker compose up -d --build --wait --wait-timeout 120
+          echo "stack healthy after $(( $(date +%s) - start )) s"
+
+      - name: Probe /health
+        run: curl -fsS http://localhost:8080/health
+
+      - name: Selenium Grid reports >= 3 ready nodes
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:4444/status | python -c 'import json,sys; v=json.load(sys.stdin)["value"]; sys.exit(0 if v["ready"] and len(v["nodes"]) >= 3 else 1)'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          curl -sS http://localhost:4444/status; exit 1
+
+      - name: Backend tests over HTTP
+        run: API_URL=http://localhost:8080 python -m pytest -q -o addopts= --ignore=tests/selenium --ignore=tests/appium
+
+      - name: Selenium Grid suite (3 parallel sessions)
+        run: python -m pytest -n 3 -o addopts= tests/selenium/ --junitxml=tests/reports/selenium-report.xml
+
+      - name: k6 smoke (full NFR-2 profile)
+        run: k6 run --summary-export=tests/reports/k6-summary.json tests/k6_load.js
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=200
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autograde-reports
+          path: tests/reports/
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v
