@@ -52,7 +52,7 @@ one pure-ASGI middleware (`Guards` in main.py), clean chat skips the room lock. 
 **0 failed, 771 req/s, p95 1.24 s** (was 6.5 s). On Windows, k6 from the host gets "connection refused" from Docker Desktop's port
 proxy — measure inside the network or from another laptop.
 
-1. **FR-3.1 athlete profile + follow/unfollow** (`GET /api/v1/athletes/{id}`, `PUT/DELETE /api/v1/athletes/{id}/follow`,
+1. ✅ **DONE by L1 agent, merged 12:20 (`social.py`, tests pass) — skip.** ~~FR-3.1 athlete profile + follow/unfollow~~ (`GET /api/v1/athletes/{id}`, `PUT/DELETE /api/v1/athletes/{id}/follow`,
    `/follow/toggle`; tables follows + athlete_stats; advisory lock per athlete; counter == row count under bursts).
    An L1 background agent was building this on branch `day2-social` in a local worktree on L1 — it will NOT be pushed while L1 is
    out. **L2: implement it yourself** in a new `api/app/modules/social.py` + `tests/test_day2_social.py`, add `social` to
