@@ -76,7 +76,22 @@
     }
   }
 
-  async function attachVideo(url) {
+  // The API names the media server "localhost" (as the spec does). A phone that opened this page via the LAN IP must
+  // fetch the stream from that same host, so swap the hostname (the port, e.g. 8888 for HLS, stays).
+  function reachable(url) {
+    try {
+      const u = new URL(url);
+      if ((u.hostname === 'localhost' || u.hostname === '127.0.0.1') && location.hostname !== u.hostname) {
+        u.hostname = location.hostname;
+      }
+      return u.toString();
+    } catch (_) {
+      return url;
+    }
+  }
+
+  async function attachVideo(rawUrl) {
+    const url = rawUrl && reachable(rawUrl);
     const video = byTestId('guest-video-player');
     if (!video || !url || video.dataset.src === url || video.dataset.probing === url) return;
     video.dataset.probing = url;
