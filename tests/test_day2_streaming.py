@@ -141,3 +141,30 @@ def test_mediamtx_publish_auth(api):
     denied = api.post("/internal/media/auth", json=hook)
     assert denied.status_code == 409 and denied.json()["error"]["code"] == "KEY_REVOKED"
     assert api.post("/internal/media/auth", data="garbage").status_code == 401
+
+
+def test_revoke_kicks_live_publishers_on_the_media_server(monkeypatch):
+    """FR-3.2: revoking a key disconnects ingest still using it (MediaMTX control API, verified live at 1.5 s)."""
+    import io
+    import json as _json
+    import urllib.request
+
+    from app.modules import streaming
+    calls = []
+
+    def fake_urlopen(req, timeout=None):
+        url = req if isinstance(req, str) else req.full_url
+        calls.append(url)
+        if url.endswith("/v3/rtmpconns/list"):
+            return io.BytesIO(_json.dumps({"items": [{"id": "c1", "path": "live/sk_live_aaaaaaaaaaaaaaaa"},
+                                                     {"id": "c2", "path": "live/other"}]}).encode())
+        if url.endswith("/v3/webrtcsessions/list"):
+            return io.BytesIO(b'{"items": []}')
+        return io.BytesIO(b"")
+
+    monkeypatch.setenv("MEDIA_API_URL", "http://media:9997")
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    assert streaming.kick_publishers("sk_live_aaaaaaaaaaaaaaaa") == 1
+    assert "http://media:9997/v3/rtmpconns/kick/c1" in calls and not any(c.endswith("/c2") for c in calls)
+    monkeypatch.delenv("MEDIA_API_URL")
+    assert streaming.kick_publishers("sk_live_aaaaaaaaaaaaaaaa") == 0

@@ -76,6 +76,30 @@ def _validate(body) -> dict:
     return {"action": body["action"], "player_id": body["player_id"], "label": label, "override": override}
 
 
+def kick_publishers(stream_key: str) -> int:
+    """Disconnect every RTMP / WebRTC publisher on live/<stream_key> via the MediaMTX control API.
+    No-op when MEDIA_API_URL is not set (tests, no media server). Returns how many sessions were kicked."""
+    import json
+    import os
+    import urllib.request
+    base = os.environ.get("MEDIA_API_URL")
+    if not base:
+        return 0
+    kicked = 0
+    for kind in ("rtmpconns", "webrtcsessions"):
+        try:
+            with urllib.request.urlopen(f"{base}/v3/{kind}/list", timeout=1) as r:
+                items = json.load(r).get("items", [])
+            for item in items:
+                if item.get("path") == f"live/{stream_key}":
+                    req = urllib.request.Request(f"{base}/v3/{kind}/kick/{item['id']}", method="POST")
+                    urllib.request.urlopen(req, timeout=1).close()
+                    kicked += 1
+        except OSError:
+            pass  # media server down: the auth hook still refuses any new publish with this key
+    return kicked
+
+
 @router.post("/audit/v1/stream/key")
 async def stream_key(request: Request):
     req = _validate(await read_json(request))
@@ -102,6 +126,13 @@ async def stream_key(request: Request):
             conn.execute("""INSERT INTO stream_keys (stream_key, player_id, label, status) VALUES (%s, %s, %s, 'active')
                             ON CONFLICT (stream_key) DO UPDATE SET player_id = EXCLUDED.player_id,
                             label = EXCLUDED.label, status = 'active', updated_at = now()""", (key, player_id, label))
+        if action == "revoke":
+            superseded = [key]
+        else:
+            superseded = [current["stream_key"]] if current is not None and current["stream_key"] != key else []
+    # After commit: cut any live ingest still using a revoked key (FR-3.2: within 2 s).
+    for old in superseded:
+        kick_publishers(old)
     body = key_view(player_id, label, key, status)
     body["signature"] = sign_day2(key, {"action": action, "player_id": player_id, "status": status,
                                         "stream_key": key})
