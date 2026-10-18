@@ -3,7 +3,19 @@
 **Resume anywhere:** `git pull`, read this file, continue the next unticked row you own. Update your rows +
 "Last updated" and push at least once per window. Laptop 2's detailed instructions: `LAPTOP2_PLAN.md`.
 
-_Last updated: Sun 18 Oct 2026, 13:10 PKT (Laptop 2) — times are from the laptop clock (`date`)_
+_Last updated: Sun 18 Oct 2026, 13:36 PKT (Laptop 1) — FINAL VERIFICATION DONE_
+
+## FINAL VERIFICATION (Laptop 1, 13:15–13:36, on main incl. 6d89593)
+- Backend suite: **1356 passed, 2 skipped** (in-process, real Postgres). Flutter: analyze clean, **50/50** tests.
+- Clean `docker compose down -v && up -d --build --wait`: 139 s incl. API image rebuild (containers up ~50 s); /health ok; Grid ready, 3 nodes.
+- Live sweep with the REAL salts from .env: **41/41** — sign-up (role forced to player, duplicate email 409, bad body 400), login all 5 roles,
+  RBAC negatives (scoring, roster, store, cross-tenant, sports, competitions), guest 403 on 7 write routes, no-token chat 403,
+  Day 2 signatures (stream key, co-stream handoff, QR) recomputed with DAY2_SALT, /q 302, moderation spec example, cart merge replay,
+  /metrics, privacy erase, cs-session-101 seeded.
+- Selenium Grid `pytest -n 3 tests/selenium`: **3/3**. k6 NFR-2 in the docker network on L1: 0 failed, 920 req/s, p95 858 ms
+  (k6 shares L1's CPU); from L2's machine p95 344 ms (`tests/reports/k6-summary.json`).
+- COVERAGE_DAY2 (measured): streaming 95.0 · costream 96.6 · qr_guest 91.7 · moderation_dlq 94.4 · observability 94.0.
+- Remaining: W4 push 13:45–14:05 (any small commit, e.g. this file). Appium is run from L2 (emulator) — see GUIDE_DAY2.md §8.
 
 ## Hard rules (Day 2 PDF, binding)
 - Freeze 14:00, final push **14:05:00 PKT**. Push in every window: W1 ✅ · W2 ✅ · W3 12:45–13:45 (NOT yet pushed) · W4 13:45–14:05.

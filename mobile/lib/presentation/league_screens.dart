@@ -10,7 +10,7 @@ import '../core/app_state.dart';
 import '../core/format.dart';
 import '../core/models.dart';
 import 'ocean_widgets.dart';
-import 'onboarding_screens.dart' show MatchTelemetryCard, TacticalLineupCard;
+import 'guest_screens.dart' show CoStreamPage, GuestMatchLivePage;
 import 'club_screens.dart' show ClubPage;
 import 'shop_screens.dart' show ProductPage, parseProducts;
 
@@ -40,6 +40,15 @@ String _statusLabel(String status) => switch (status) {
   'cancelled' => 'Cancelled',
   _ => 'Upcoming',
 };
+
+String _inferSport(String raw, {bool hasWickets = false}) {
+  final s = raw.toLowerCase();
+  if (hasWickets || s.contains('cricket')) return 'cricket';
+  if (s.contains('basketball') || s.contains('hoops')) return 'basketball';
+  if (s.contains('esports')) return 'esports';
+  if (s.contains('football') || s.startsWith('league-')) return 'football';
+  return s;
+}
 
 String _clock(String? raw) {
   final t = DateTime.tryParse(raw ?? '');
@@ -339,14 +348,21 @@ class _FixturesPageState extends State<FixturesPage> {
     final (_, home) = _team(state, f['home'] ?? f['home_team_id']);
     final (_, away) = _team(state, f['away'] ?? f['away_team_id']);
     final matchId = asStr(f['match_id']);
+    final hasWickets = f['home_wickets'] != null;
+    final sport = _inferSport(asStr(f['sport_id'], leagueId), hasWickets: hasWickets);
+    final hScore = asStr(f['home_score'], '0');
+    final aScore = asStr(f['away_score'], '0');
+    final hasOvers = f['home_overs'] != null && f['away_overs'] != null;
     return _LiveMatchCard(
       key: ValueKey('match-$matchId'), // a filtered list never hands one match's card to another
       home: home,
       away: away,
       status: asStr(f['status'], 'upcoming'),
-      homeScore: asStr(f['home_score'], '0'),
-      awayScore: asStr(f['away_score'], '0'),
+      homeScore: hasWickets ? '$hScore/${f['home_wickets']}' : hScore,
+      awayScore: hasWickets ? '$aScore/${f['away_wickets']}' : aScore,
       scheduledAt: asStr(f['scheduled_at']),
+      sportId: sport,
+      scoreNote: hasOvers ? '${f['home_overs']} ov · ${f['away_overs']} ov' : null,
       pending: state.pendingFor(ActionTypes.scoreEvent, matchId).length,
       onTap: () =>
           openPage(context, MatchPage(state: state, matchId: matchId)),
@@ -364,10 +380,13 @@ class _LiveMatchCard extends StatelessWidget {
     required this.homeScore,
     required this.awayScore,
     required this.scheduledAt,
+    this.sportId = 'football',
+    this.scoreNote,
     this.pending = 0,
     this.onTap,
   });
-  final String home, away, status, homeScore, awayScore, scheduledAt;
+  final String home, away, status, homeScore, awayScore, scheduledAt, sportId;
+  final String? scoreNote;
   final int pending;
   final VoidCallback? onTap;
 
@@ -377,6 +396,21 @@ class _LiveMatchCard extends StatelessWidget {
     final live = status == 'in_progress';
     final label = _statusLabel(status);
     final scoreText = upcoming ? _clock(scheduledAt) : '$homeScore – $awayScore';
+    final startLabel = switch (sportId) {
+      'cricket' => 'TOSS / START',
+      'basketball' => 'TIP-OFF',
+      'esports' => 'MATCH START',
+      'football' => 'KICK-OFF',
+      _ => 'START TIME',
+    };
+    final doneTag = sportId == 'football' ? 'FULL TIME' : 'COMPLETED';
+    final boxSubtitle = upcoming
+        ? startLabel
+        : (scoreNote != null && scoreNote!.isNotEmpty)
+        ? scoreNote!
+        : live
+        ? 'IN PROGRESS'
+        : 'FINAL';
     return Pressable(
       onTap: onTap,
       semanticLabel:
@@ -391,7 +425,7 @@ class _LiveMatchCard extends StatelessWidget {
                   live
                       ? '● LIVE'
                       : status == 'completed'
-                      ? 'FULL TIME'
+                      ? doneTag
                       : label.toUpperCase(),
                   color: live ? _live : ocean,
                 ),
@@ -438,7 +472,7 @@ class _LiveMatchCard extends StatelessWidget {
                     child: Column(
                       children: [
                         FittedBox(
-                          // A new score pops in (scale + fade) so a goal is noticed at a glance.
+                          // A new score pops in (scale + fade) so a score change is noticed at a glance.
                           child: AnimatedSwitcher(
                             duration: Motion.enter,
                             reverseDuration: Motion.exit,
@@ -463,11 +497,7 @@ class _LiveMatchCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          upcoming
-                              ? 'KICK-OFF'
-                              : live
-                              ? 'IN PROGRESS'
-                              : 'FINAL',
+                          boxSubtitle,
                           style: const TextStyle(
                             fontFamily: 'Inter',
                             fontSize: 8,
@@ -843,18 +873,15 @@ class _MatchPageState extends State<MatchPage> {
               ?_pinned(),
               if (canScore) _scoringDesk(context),
               ChoiceRow(
-                items: const ['Timeline', 'Lineup', 'Telemetry', 'Match info'],
+                items: const ['Timeline', 'Live & QR', 'Match info'],
                 value: tab,
                 light: true,
                 onChanged: (v) => setState(() => tab = v),
               ),
-              if (tab == 'Timeline') ...[
-                _timeline(context, pending),
-                const TacticalLineupCard(),
-              ] else if (tab == 'Lineup')
-                const TacticalLineupCard()
-              else if (tab == 'Telemetry')
-                const MatchTelemetryCard()
+              if (tab == 'Timeline')
+                _timeline(context, pending)
+              else if (tab == 'Live & QR')
+                ..._liveAndQr(context)
               else
                 _info(),
             ],
@@ -868,11 +895,17 @@ class _MatchPageState extends State<MatchPage> {
     final home = asMap(data['home']);
     final away = asMap(data['away']);
     final status = asStr(data['status'], 'upcoming');
+    final hasWickets = home['wickets'] != null;
+    final sport = _inferSport(
+      asStr(data['sport_id'], asStr(data['league_id'])),
+      hasWickets: hasWickets,
+    );
     String scoreOf(Map<String, dynamic> s) {
       final v = asStr(s['score'], '0');
       return s['wickets'] != null ? '$v/${s['wickets']}' : v;
     }
 
+    final hasOvers = home['overs'] != null && away['overs'] != null;
     final outcome = asStr(data['outcome']);
     final result = switch (outcome) {
       'home_win' || 'away_win' => '${_name(asStr(data['winner_team_id']))} won',
@@ -882,7 +915,7 @@ class _MatchPageState extends State<MatchPage> {
         status == 'in_progress'
             ? 'In play · updates every 5 seconds'
             : status == 'completed'
-            ? 'Full time'
+            ? (sport == 'football' ? 'Full time' : 'Match completed')
             : 'Not started yet',
     };
     return _LiveMatchCard(
@@ -892,6 +925,8 @@ class _MatchPageState extends State<MatchPage> {
       homeScore: scoreOf(home),
       awayScore: scoreOf(away),
       scheduledAt: asStr(data['scheduled_at']),
+      sportId: sport,
+      scoreNote: hasOvers ? '${home['overs']} ov · ${away['overs']} ov' : null,
     ).withResult(result);
   }
 
@@ -1109,6 +1144,62 @@ class _MatchPageState extends State<MatchPage> {
     ),
   );
 
+  List<Widget> _liveAndQr(BuildContext context) {
+    final status = asStr(data['status'], 'upcoming');
+    final webView = switch (status) {
+      'in_progress' => 'live',
+      'completed' => 'vod',
+      'upcoming' => 'preview',
+      _ => 'notice?state=$status',
+    };
+    final shortCode = widget.matchId == 'match-m1' ? 'm1-live' : widget.matchId;
+    return [
+      GlassCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SectionHeading('Live Broadcast & Chat', trailing: Tag('HLS / SSE')),
+            DetailRow('HLS Stream', 'http://localhost:8888/matches/${widget.matchId}/index.m3u8'),
+            DetailRow('Chat Room', 'chat-${widget.matchId}'),
+            DetailRow('Guest Web Player', '${state.baseUrl}/web/matches/${widget.matchId}/$webView'),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              key: const Key('open-live-match-stream'),
+              onPressed: () => openPage(
+                context,
+                GuestMatchLivePage(state: state, matchId: widget.matchId),
+              ),
+              icon: const Icon(Icons.live_tv),
+              label: const Text('Open Live Stream & Chat'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              key: const Key('open-match-costream'),
+              onPressed: () => openPage(
+                context,
+                CoStreamPage(state: state, sessionId: 'cs-session-101'),
+              ),
+              icon: const Icon(Icons.grid_view_rounded),
+              label: const Text('Open 4-Way Co-Stream (cs-session-101)'),
+            ),
+          ],
+        ),
+      ),
+      GlassCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SectionHeading('Dynamic QR & Deep Link', trailing: Tag('AUTO-ROUTE')),
+            DetailRow('Short URL', '${state.baseUrl}/q/$shortCode'),
+            DetailRow('Target Route', '/web/matches/${widget.matchId}/$webView'),
+            DetailRow('Mobile Deep Link', 'nascon://entity/${widget.matchId}'),
+            DetailRow('Exports', '/audit/v1/qr/${widget.matchId}/export.{svg|png|pdf}'),
+          ],
+        ),
+      ),
+    ];
+  }
+
   Widget _info() => GlassCard(
     child: Column(
       children: [
@@ -1202,7 +1293,7 @@ class _ScoreSheetState extends State<_ScoreSheet> {
             if (widget.eventTypes.isEmpty)
               CupertinoTextField(
                 controller: custom,
-                placeholder: 'Event type, e.g. goal',
+                placeholder: 'Event type, e.g. score_point',
                 padding: const EdgeInsets.all(14),
                 onChanged: (_) => setState(() {}),
               )
@@ -1302,6 +1393,7 @@ class _StandingsPageState extends State<StandingsPage> {
   @override
   Widget build(BuildContext context) {
     final d = loaded?.data;
+    final sportId = _inferSport(d is Map ? asStr(d['sport_id'], leagueId) : leagueId);
     final rows = [
       for (final r in asList(d is Map ? d['table'] : d)) asMap(r),
     ]..sort((a, b) => asInt(a['rank']).compareTo(asInt(b['rank'])));
@@ -1334,7 +1426,7 @@ class _StandingsPageState extends State<StandingsPage> {
             )
           else ...[
             _leader(context, rows.first),
-            _table(rows),
+            _table(rows, sportId),
             _notes(rows),
           ],
         ],
@@ -1390,60 +1482,81 @@ class _StandingsPageState extends State<StandingsPage> {
     );
   }
 
-  Widget _table(List<Map<String, dynamic>> rows) => GlassCard(
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 20),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SectionHeading(
-          humanize(leagueId),
-          trailing: const Tag('TABLE'),
-        ),
-        const Text(
-          'P Played · W Won · D Drawn · L Lost · GD Difference · Pts Points',
-          style: TextStyle(fontFamily: 'Inter', fontSize: 10, color: muted),
-        ),
-        const SizedBox(height: 16),
-        LayoutBuilder(
-          builder: (context, constraints) => SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minWidth: constraints.maxWidth),
-              child: DataTable(
-                horizontalMargin: 2,
-                columnSpacing: 14,
-                headingRowHeight: 36,
-                dataRowMinHeight: 56,
-                dataRowMaxHeight: 72,
-                headingTextStyle: const TextStyle(
-                  fontFamily: 'Inter',
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: muted,
+  Widget _table(List<Map<String, dynamic>> rows, String sportId) {
+    final diffCol = switch (sportId) {
+      'cricket' => 'NRR',
+      'basketball' => 'PD',
+      'esports' => 'RD',
+      _ => 'GD',
+    };
+    final diffLegend = switch (sportId) {
+      'cricket' => 'NRR Net Run Rate',
+      'basketball' => 'PD Point Diff',
+      'esports' => 'RD Round Diff',
+      _ => 'GD Goal Diff',
+    };
+    return GlassCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SectionHeading(
+            humanize(leagueId),
+            trailing: const Tag('TABLE'),
+          ),
+          Text(
+            'P Played · W Won · D Drawn · L Lost · $diffLegend · Pts Points',
+            style: const TextStyle(fontFamily: 'Inter', fontSize: 10, color: muted),
+          ),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                child: DataTable(
+                  horizontalMargin: 2,
+                  columnSpacing: 14,
+                  headingRowHeight: 36,
+                  dataRowMinHeight: 56,
+                  dataRowMaxHeight: 72,
+                  headingTextStyle: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: muted,
+                  ),
+                  dataTextStyle: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 11,
+                    color: ink,
+                  ),
+                  columns: [
+                    for (final label in ['Club', 'P', 'W', 'D', 'L', diffCol, 'Pts'])
+                      DataColumn(label: Text(label), numeric: label != 'Club'),
+                  ],
+                  rows: [for (final r in rows) _row(r, sportId)],
                 ),
-                dataTextStyle: const TextStyle(
-                  fontFamily: 'Inter',
-                  fontSize: 11,
-                  color: ink,
-                ),
-                columns: [
-                  for (final label in ['Club', 'P', 'W', 'D', 'L', 'GD', 'Pts'])
-                    DataColumn(label: Text(label), numeric: label != 'Club'),
-                ],
-                rows: [for (final r in rows) _row(r)],
               ),
             ),
           ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 
-  DataRow _row(Map<String, dynamic> r) {
+  DataRow _row(Map<String, dynamic> r, String sportId) {
     final rank = asInt(r['rank']);
     final name = widget.state.teamName(asStr(r['team_id']));
     final (icon, label, color) = _qualification(asStr(r['status']));
-    final diff = asInt(r['diff']);
+    final String diffText;
+    if (sportId == 'cricket' || r['diff'] is double) {
+      final nrr = r['diff'] is num ? (r['diff'] as num).toDouble() : double.tryParse('${r['diff']}') ?? 0.0;
+      diffText = '${nrr > 0 ? '+' : ''}${nrr.toStringAsFixed(2)}';
+    } else {
+      final diff = asInt(r['diff']);
+      diffText = diff > 0 ? '+$diff' : '$diff';
+    }
     return DataRow(
       color: WidgetStatePropertyAll(
         rank == 1 ? ocean.withValues(alpha: .08) : Colors.transparent,
@@ -1510,7 +1623,7 @@ class _StandingsPageState extends State<StandingsPage> {
         ),
         for (final n in [r['played'], r['won'], r['drawn'], r['lost']])
           DataCell(Text('${asInt(n)}')),
-        DataCell(Text(diff > 0 ? '+$diff' : '$diff')),
+        DataCell(Text(diffText)),
         DataCell(
           Text(
             '${asInt(r['points'])}',
