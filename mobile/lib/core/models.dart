@@ -124,6 +124,7 @@ class PendingAction {
     required this.baseVersion,
     required this.payload,
     this.label = '',
+    this.owner = '',
   });
 
   final String actionId;
@@ -132,6 +133,9 @@ class PendingAction {
   final int baseVersion;
   final Map<String, dynamic> payload;
   final String label;
+
+  /// user_id of the account that queued it: only that account sees and syncs it (with its own token).
+  final String owner;
 
   /// Match id (score_event) or player id (roster_transfer) this action touches.
   String get targetId => type == ActionTypes.scoreEvent ? asStr(payload['match_id']) : asStr(payload['player_id']);
@@ -170,10 +174,12 @@ class SyncLogEntry {
     required this.at,
     this.resolution,
     this.errorCode,
+    this.owner = '',
   });
 
   final String actionId;
   final String label;
+  final String owner; // user_id whose action this was
   final String status; // applied | rejected | duplicate
   final String? resolution;
   final String? errorCode;
@@ -188,6 +194,7 @@ class SyncLogEntry {
     'error_code': errorCode,
     'message': message,
     'at': at,
+    'owner': owner,
   };
 
   factory SyncLogEntry.fromJson(Map<String, dynamic> j) => SyncLogEntry(
@@ -198,5 +205,6 @@ class SyncLogEntry {
     errorCode: j['error_code'] as String?,
     message: asStr(j['message']),
     at: asStr(j['at']),
+    owner: asStr(j['owner']),
   );
 }

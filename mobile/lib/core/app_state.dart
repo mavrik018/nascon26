@@ -81,6 +81,7 @@ class AppState extends ChangeNotifier {
   Stream<String> get messages => _messages.stream;
 
   bool ready = false;
+  bool onboardingSeen = false;
   Session? session;
   String? sessionNotice;
   bool hasNetwork = true;
@@ -121,7 +122,7 @@ class AppState extends ChangeNotifier {
 
     var device = await store.getSetting('device_id');
     if (device == null) {
-      device = newId('dev');
+      device = newId();
       await store.setSetting('device_id', device);
     }
     deviceId = device;
@@ -150,8 +151,12 @@ class AppState extends ChangeNotifier {
         session = null;
       }
     }
-    pending = await store.pendingActions();
-    log = await store.syncLog();
+    final seenOnboarding = await store.getSetting('onboarding_seen');
+    onboardingSeen = seenOnboarding == 'true' || session != null;
+    if (onboardingSeen && seenOnboarding != 'true') {
+      await store.setSetting('onboarding_seen', 'true');
+    }
+    await _reloadQueue();
 
     if (_checkNetwork != null) hasNetwork = await _checkNetwork();
     _netSub = _networkChanges?.listen(_onNetworkChanged);
@@ -159,6 +164,13 @@ class AppState extends ChangeNotifier {
     ready = true;
     _notify();
     if (session != null && pending.isNotEmpty && isOnline) unawaited(syncNow());
+  }
+
+  /// Marks first-launch onboarding as completed and persists it in SQLite so it is never shown again.
+  Future<void> completeOnboarding() async {
+    onboardingSeen = true;
+    await store.setSetting('onboarding_seen', 'true');
+    _notify();
   }
 
   String get baseUrl => api.baseUrl;
@@ -210,10 +222,13 @@ class AppState extends ChangeNotifier {
     session = s;
     api.token = s.token;
     sessionNotice = null;
+    onboardingSeen = true;
+    await store.setSetting('onboarding_seen', 'true');
     await tokens.write('session', jsonEncode(s.toJson()));
     savedAccounts = [s, ...savedAccounts.where((a) => a.user.email != s.user.email)];
     await _saveAccounts();
     if (s.user.leagueId != null) await selectLeague(s.user.leagueId!);
+    await _reloadQueue();
     _notify();
     if (pending.isNotEmpty && isOnline) unawaited(syncNow());
   }
@@ -233,6 +248,8 @@ class AppState extends ChangeNotifier {
     api.token = null;
     sessionNotice = notice;
     cart.clear();
+    pending = const [];
+    log = const [];
     await tokens.delete('session');
     if (forget && email != null) {
       savedAccounts = savedAccounts.where((a) => a.user.email != email).toList();
@@ -406,12 +423,13 @@ class AppState extends ChangeNotifier {
     Future<SubmitOutcome> enqueue() async {
       await queueAction(
         PendingAction(
-          actionId: newId('act'),
+          actionId: newId(),
           type: type,
           queuedAt: isoUtc(DateTime.now()),
           baseVersion: baseVersion,
           payload: body,
           label: label,
+          owner: user?.userId ?? '',
         ),
       );
       return const SubmitOutcome(SubmitStatus.queued);
@@ -428,8 +446,16 @@ class AppState extends ChangeNotifier {
 
   Future<void> queueAction(PendingAction action) async {
     await store.enqueue(action);
-    pending = await store.pendingActions();
+    await _reloadQueue();
     _notify();
+  }
+
+  /// The signed-in account's own queue and results. Other accounts' actions stay stored on the
+  /// phone untouched until that account signs in again (and syncs them with its own token).
+  Future<void> _reloadQueue() async {
+    final me = user?.userId;
+    pending = me == null ? const [] : [for (final a in await store.pendingActions()) if (a.owner == me) a];
+    log = me == null ? const [] : [for (final e in await store.syncLog()) if (e.owner == me) e];
   }
 
   List<PendingAction> pendingFor(String type, String targetId) => [
@@ -459,7 +485,8 @@ class AppState extends ChangeNotifier {
   /// results and removes every action the server answered for.
   Future<SyncSummary?> syncNow({bool announce = true}) async {
     if (syncing || session == null) return null;
-    final actions = await store.pendingActions();
+    await _reloadQueue();
+    final actions = pending;
     if (actions.isEmpty) {
       pending = const [];
       _notify();
@@ -496,6 +523,7 @@ class AppState extends ChangeNotifier {
               errorCode: r['error_code'] as String?,
               message: resultMessage(r),
               at: now,
+              owner: action.owner,
             ),
           );
         }
@@ -511,8 +539,7 @@ class AppState extends ChangeNotifier {
           : 'Sync did not finish: ${e.message} Your actions are kept on this phone.';
     } finally {
       syncing = false;
-      pending = await store.pendingActions();
-      log = await store.syncLog();
+      await _reloadQueue();
       _notify();
     }
     return summary;
@@ -540,4 +567,7 @@ class AppScope extends InheritedNotifier<AppState> {
   static AppState of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<AppScope>()!.notifier!;
 
   static AppState read(BuildContext context) => context.getInheritedWidgetOfExactType<AppScope>()!.notifier!;
+
+  /// Null outside the app shell (e.g. a widget test pumping one page).
+  static AppState? maybeOf(BuildContext context) => context.dependOnInheritedWidgetOfExactType<AppScope>()?.notifier;
 }

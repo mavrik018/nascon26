@@ -7,11 +7,12 @@ import 'package:league_app/core/models.dart';
 
 import 'fake_backend.dart';
 
-Future<AppState> makeState(FakeBackend backend, MemoryLocalStore store, {bool network = true}) async {
+Future<AppState> makeState(FakeBackend backend, MemoryLocalStore store,
+    {bool network = true, String userId = 'user-77', String role = 'club_manager'}) async {
   final tokens = MemoryTokenStore();
   tokens.values['session'] = jsonEncode({
-    'token': 'tok-123',
-    'user': {'user_id': 'user-77', 'email': 'manager@nascon.test', 'role': 'club_manager', 'club_id': 'club-alpha-1'},
+    'token': 'tok-$userId',
+    'user': {'user_id': userId, 'email': '$userId@nascon.test', 'role': role, 'club_id': 'club-alpha-1'},
     'tenant': null,
   });
   final state = AppState(
@@ -123,6 +124,7 @@ void main() {
         baseVersion: 3,
         payload: {'match_id': 'm1'},
         label: 'Goal',
+        owner: 'user-77',
       ),
     );
     await first.queueAction(
@@ -133,6 +135,7 @@ void main() {
         baseVersion: 1,
         payload: {'player_id': 'p2'},
         label: 'Transfer P2',
+        owner: 'user-77',
       ),
     );
     first.dispose();
@@ -204,11 +207,32 @@ void main() {
         queuedAt: '2026-10-17T11:00:00Z',
         baseVersion: 0,
         payload: {},
+        owner: 'user-77',
       ),
     );
     backend.offline = true;
     await state.syncNow(announce: false);
     expect(store.queue, hasLength(1));
     expect(state.lastSyncError, contains('kept on this phone'));
+  });
+
+  test('each account has its own queue: a viewer never sees or syncs the manager offline actions', () async {
+    final backend = FakeBackend();
+    final store = MemoryLocalStore();
+    final manager = await makeState(backend, store, network: false);
+    await manager.submitRosterAction(body: {'request_id': 'tr-9', 'player_id': 'p9'}, label: 'Transfer P9');
+    expect(manager.pending, hasLength(1));
+    manager.dispose();
+
+    final viewer = await makeState(backend, store, userId: 'user-viewer', role: 'viewer');
+    expect(viewer.pending, isEmpty);
+    await viewer.syncNow(announce: false);
+    expect(backend.requests.where((r) => r.url.path == '/api/v1/sync'), isEmpty);
+    expect(store.queue, hasLength(1), reason: 'kept for the manager');
+    viewer.dispose();
+
+    final back = await makeState(backend, store, network: false);
+    addTearDown(back.dispose);
+    expect(back.pending.single.label, 'Transfer P9');
   });
 }

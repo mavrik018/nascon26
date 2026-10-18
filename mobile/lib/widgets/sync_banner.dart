@@ -78,53 +78,51 @@ class SyncBanner extends StatelessWidget {
   }
 }
 
-/// iOS-style floating status pill (always visible, above the tab bar): shows
-/// Online / Offline / Syncing and the number of pending offline actions.
-class SyncPill extends StatelessWidget {
-  const SyncPill({super.key, required this.state, this.onTap});
+/// Compact Online / Offline / Syncing chip for page headers (spec 8.2: always visible). A coloured
+/// dot plus words, so the state never depends on colour alone; shows the pending count when > 0.
+class SyncDot extends StatelessWidget {
+  const SyncDot({super.key, required this.state, this.onTap});
   final AppState state;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final n = state.pending.length;
-    // Quiet when all is well: shown only when offline, syncing or changes are waiting.
-    if (state.status == NetStatus.online && n == 0) return const SizedBox.shrink();
-    final (IconData icon, String text, Color dot) = switch (state.status) {
-      NetStatus.syncing => (Icons.sync, 'Syncing $n…', const Color(0xFF0A84FF)),
-      NetStatus.offline => (Icons.cloud_off, n == 0 ? 'Offline' : 'Offline · $n pending', const Color(0xFFFF9F0A)),
-      NetStatus.online => (
-          n == 0 ? Icons.cloud_done_outlined : Icons.cloud_upload_outlined,
-          n == 0 ? 'Online' : 'Online · $n pending',
-          const Color(0xFF30D158),
-        ),
+    final (String text, Color dot) = switch (state.status) {
+      NetStatus.syncing => ('Syncing', const Color(0xFF0A84FF)),
+      NetStatus.offline => ('Offline', const Color(0xFFFF9F0A)),
+      NetStatus.online => ('Online', const Color(0xFF30D158)),
     };
+    final label = n == 0 ? text : '$text · $n';
     return Semantics(
       button: onTap != null,
       liveRegion: true,
-      label: 'Connection: $text. Open sync status.',
+      label: 'Connection: $text${n == 0 ? '' : ', $n pending'}. Open sync status.',
+      excludeSemantics: true,
       child: Material(
-        color: const Color(0xF21C1C1E),
+        key: const Key('sync-dot'),
+        color: Colors.black.withValues(alpha: .22),
         shape: const StadiumBorder(),
-        elevation: 6,
         child: InkWell(
           customBorder: const StadiumBorder(),
           onTap: onTap,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 40),
+            constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              child: ExcludeSemantics(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(width: 8, height: 8, decoration: BoxDecoration(color: dot, shape: BoxShape.circle)),
-                    const SizedBox(width: 8),
-                    Icon(icon, size: 16, color: Colors.white),
-                    const SizedBox(width: 6),
-                    Text(text, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-                  ],
-                ),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (state.status == NetStatus.syncing)
+                    const SizedBox.square(
+                      dimension: 10,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  else
+                    Container(width: 10, height: 10, decoration: BoxDecoration(color: dot, shape: BoxShape.circle)),
+                  const SizedBox(width: 6),
+                  Text(label, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                ],
               ),
             ),
           ),

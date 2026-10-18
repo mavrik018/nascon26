@@ -1,6 +1,5 @@
 import 'dart:ui' show ImageFilter;
-import 'package:flutter/cupertino.dart'
-    show CupertinoAlertDialog, CupertinoDialogAction, showCupertinoDialog;
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../toolkit/02_ui_elements/app_chip.dart';
@@ -10,6 +9,7 @@ import '../core/format.dart';
 import '../core/models.dart';
 import 'club_screens.dart' show plainError;
 import 'ocean_widgets.dart';
+import 'onboarding_screens.dart';
 import 'sport_screens.dart';
 
 const _amber = Color(0xFF92621C);
@@ -38,42 +38,30 @@ Future<void> showServerDialog(BuildContext context, AppState state) async {
   final ctrl = TextEditingController(text: state.baseUrl);
   String? status;
   bool busy = false;
-  await showDialog<void>(
+  await showCupertinoDialog<void>(
     context: context,
+    barrierDismissible: true,
     builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setLocal) => AlertDialog(
+      builder: (ctx, setLocal) => CupertinoAlertDialog(
         title: const Text('Server address'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextField(
-                controller: ctrl,
-                keyboardType: TextInputType.url,
-                decoration: const InputDecoration(
-                  labelText: 'Server URL',
-                  hintText: 'http://10.0.2.2:8080',
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Emulator: http://10.0.2.2:8080 · Phone on Wi-Fi: http://<laptop IP>:8080',
-                style: TextStyle(fontSize: 11, color: muted),
-              ),
-              if (busy) ...[
-                const SizedBox(height: 12),
-                const LinearProgressIndicator(),
-              ],
-              if (status != null) ...[
-                const SizedBox(height: 12),
-                Text(status!, style: const TextStyle(color: ink)),
-              ],
-            ],
-          ),
+        content: Column(
+          children: [
+            const SizedBox(height: 8),
+            CupertinoTextField(
+              controller: ctrl,
+              keyboardType: TextInputType.url,
+              placeholder: 'http://10.0.2.2:8080',
+              clearButtonMode: OverlayVisibilityMode.editing,
+            ),
+            const SizedBox(height: 8),
+            const Text('Emulator: http://10.0.2.2:8080\nPhone on Wi-Fi: http://<laptop IP>:8080',
+                style: TextStyle(fontSize: 12)),
+            if (busy) const Padding(padding: EdgeInsets.only(top: 10), child: CupertinoActivityIndicator()),
+            if (status != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(status!)),
+          ],
         ),
         actions: [
-          TextButton(
+          CupertinoDialogAction(
             onPressed: busy
                 ? null
                 : () async {
@@ -86,11 +74,9 @@ Future<void> showServerDialog(BuildContext context, AppState state) async {
                   },
             child: const Text('Test'),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
+          CupertinoDialogAction(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          CupertinoDialogAction(
+            isDefaultAction: true,
             onPressed: () async {
               await state.setBaseUrl(ctrl.text.trim());
               if (ctx.mounted) Navigator.pop(ctx);
@@ -259,6 +245,24 @@ class ProfilePage extends StatelessWidget {
               ),
               const Divider(height: 1),
               ListTile(
+                key: const Key('open-onboarding-tour'),
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.auto_awesome_outlined, color: ocean),
+                title: const Text('Welcome tour'),
+                subtitle: const Text('Replay the 4-screen onboarding walkthrough'),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (ctx) => OnboardingPage(
+                      state: state,
+                      onFinish: () {
+                        if (Navigator.canPop(ctx)) Navigator.pop(ctx);
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.logout, color: _danger),
                 title: const Text('Log out'),
@@ -352,6 +356,21 @@ class _SignInPageState extends State<SignInPage> {
       subtitle: 'CLUBLINE',
       actions: [
         IconButton(
+          key: const Key('signin-onboarding-tour'),
+          tooltip: 'Welcome tour',
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (ctx) => OnboardingPage(
+                state: widget.state,
+                onFinish: () {
+                  if (Navigator.canPop(ctx)) Navigator.pop(ctx);
+                },
+              ),
+            ),
+          ),
+          icon: const Icon(Icons.auto_awesome_outlined, color: Colors.white),
+        ),
+        IconButton(
           tooltip: 'Server address',
           onPressed: () => showServerDialog(context, widget.state),
           icon: const Icon(Icons.dns_outlined, color: Colors.white),
@@ -416,44 +435,37 @@ class _SignInPageState extends State<SignInPage> {
                     ],
                   ),
                   const SizedBox(height: 14),
-                  TextFormField(
-                    key: const Key('signin-email'),
-                    controller: email,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                    autofillHints: const [AutofillHints.email],
-                    decoration: const InputDecoration(
-                      labelText: 'Email address',
-                      prefixIcon: Icon(Icons.mail_outline),
-                    ),
-                    validator: (v) =>
-                        v != null &&
-                            RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(v.trim())
-                        ? null
-                        : 'Enter a valid email address.',
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    key: const Key('signin-password'),
-                    controller: password,
-                    obscureText: obscure,
-                    autofillHints: const [AutofillHints.password],
-                    onFieldSubmitted: (_) => busy ? null : _signIn(),
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      prefixIcon: const Icon(Icons.lock_outline),
-                      suffixIcon: IconButton(
-                        tooltip: obscure ? 'Show password' : 'Hide password',
-                        onPressed: () => setState(() => obscure = !obscure),
-                        icon: Icon(
-                          obscure
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                        ),
+                  FormSection(
+                    children: [
+                      TextRow(
+                        fieldKey: const Key('signin-email'),
+                        label: 'Email address',
+                        controller: email,
+                        prefixIcon: CupertinoIcons.mail,
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next,
+                        autofillHints: const [AutofillHints.email],
+                        validator: (v) =>
+                            v != null && RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(v.trim())
+                            ? null
+                            : 'Enter a valid email address.',
                       ),
-                    ),
-                    validator: (v) =>
-                        (v ?? '').isNotEmpty ? null : 'Enter your password.',
+                      TextRow(
+                        fieldKey: const Key('signin-password'),
+                        label: 'Password',
+                        controller: password,
+                        prefixIcon: CupertinoIcons.lock,
+                        obscureText: obscure,
+                        autofillHints: const [AutofillHints.password],
+                        onFieldSubmitted: (_) => busy ? null : _signIn(),
+                        suffix: IconButton(
+                          tooltip: obscure ? 'Show password' : 'Hide password',
+                          onPressed: () => setState(() => obscure = !obscure),
+                          icon: Icon(obscure ? CupertinoIcons.eye : CupertinoIcons.eye_slash, color: muted),
+                        ),
+                        validator: (v) => (v ?? '').isNotEmpty ? null : 'Enter your password.',
+                      ),
+                    ],
                   ),
                   if (error != null) ...[
                     const SizedBox(height: 12),
@@ -546,7 +558,7 @@ class _SyncPageState extends State<SyncPage> {
     final summary = await s.syncNow();
     if (!mounted) return;
     if (summary == null && s.lastSyncError != null) {
-      notice(context, s.lastSyncError!);
+      notice(context, s.lastSyncError!, kind: ToastKind.error);
     }
   }
 
@@ -694,58 +706,74 @@ class SportGlassCards extends StatelessWidget {
     (Icons.sports_cricket, 'Cricket', Color(0xFFB9A7DB), Colors.white),
   ];
 
-  @override
-  Widget build(BuildContext context) => Semantics(
-    label: 'Supported sports: football, esports, basketball and cricket',
-    child: ExcludeSemantics(
-      child: SizedBox(
-        height: 132,
-        child: Row(
-          children: [
-            for (final (icon, label, tint, fg) in _cards)
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Transform(
-                    alignment: Alignment.center,
-                    transform: Matrix4.skewY(-0.06),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [tint.withValues(alpha: .78), tint.withValues(alpha: .48)],
-                            ),
-                            border: Border.all(color: Colors.white.withValues(alpha: .55), width: 1.2),
-                            boxShadow: [
-                              BoxShadow(color: Colors.black.withValues(alpha: .18), blurRadius: 18, offset: const Offset(0, 10)),
-                            ],
-                          ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(icon, size: 36, color: fg),
-                              const SizedBox(height: 8),
-                              Text(label,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 12)),
-                            ],
-                          ),
+  Widget _fallback() => SizedBox(
+    height: 132,
+    child: Row(
+      children: [
+        for (final (icon, label, tint, fg) in _cards)
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.skewY(-0.06),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [tint.withValues(alpha: .78), tint.withValues(alpha: .48)],
                         ),
+                        border: Border.all(color: Colors.white.withValues(alpha: .55), width: 1.2),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(icon, size: 36, color: fg),
+                          const SizedBox(height: 8),
+                          Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 12),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ),
               ),
-          ],
+            ),
+          ),
+      ],
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Supported sports: football, esports, basketball and cricket',
+    child: ExcludeSemantics(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 164),
+          child: AspectRatio(
+            aspectRatio: 939 / 406,
+            child: Image.asset(
+              'assets/images/login_sports_hero.png',
+              key: const Key('login-sports-hero'),
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
+              errorBuilder: (_, _, _) => _fallback(),
+            ),
+          ),
         ),
       ),
     ),
   );
 }
+

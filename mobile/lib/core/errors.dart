@@ -43,6 +43,13 @@ const Map<String, String> friendlyByCode = {
   'VARIANT_NOT_FOUND': 'That product option is no longer available.',
   'DUPLICATE_ORDER_ID': 'This order was already placed with different details. Please start a new checkout.',
   'PRODUCT_NOT_FOUND': 'That product could not be found.',
+  // Admin / rules / scheduling
+  'CLUB_IN_USE': 'This club still has fixtures or players. Move or release its players and remove its fixtures first.',
+  'SPORT_IN_USE': 'This sport is built in or used by a league, so it cannot be deleted. You can still edit its rules.',
+  'SPORT_EXISTS': 'A sport with this name already exists. Pick another name.',
+  'VENUE_NOT_FOUND': 'That venue could not be found.',
+  'SCHEDULE_CONFLICT': 'That time clashes with another fixture. Pick a different time or venue.',
+  'COMPETITION_EXISTS': 'A competition with that id already exists.',
 };
 
 const String offlineMessage =

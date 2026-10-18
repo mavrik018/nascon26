@@ -64,6 +64,28 @@ class ApiClient {
   set baseUrl(String value) => _baseUrl = normalizeBaseUrl(value);
 
   Future<dynamic> get(String path) => send('GET', path);
+
+  /// Server-sent events (`text/event-stream`): every `data:` message, decoded as JSON. Errors (bad
+  /// status, dropped connection) end the stream with an error so the caller can fall back to polling.
+  Stream<dynamic> events(String path) async* {
+    final request = http.Request('GET', Uri.parse('$_baseUrl$path'))..headers['Accept'] = 'text/event-stream';
+    final sentToken = token;
+    if (sentToken != null) request.headers['Authorization'] = 'Bearer $sentToken';
+    final response = await _client.send(request).timeout(timeout);
+    if (response.statusCode != 200) {
+      throw ApiException('Live updates are not available.', status: response.statusCode);
+    }
+    final data = StringBuffer();
+    await for (final line in response.stream.transform(utf8.decoder).transform(const LineSplitter())) {
+      if (line.startsWith('data:')) {
+        if (data.isNotEmpty) data.write('\n'); // SSE joins multi-line data with newlines
+        data.write(line.substring(5).trimLeft());
+      } else if (line.isEmpty && data.isNotEmpty) {
+        yield jsonDecode(data.toString());
+        data.clear();
+      }
+    }
+  }
   Future<dynamic> post(String path, Object? body) => send('POST', path, body);
 
   Future<dynamic> send(String method, String path, [Object? body]) async {

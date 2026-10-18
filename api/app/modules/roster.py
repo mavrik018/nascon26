@@ -27,6 +27,7 @@ Date semantics (documented interpretation):
     (who "system") is appended and the loan is flagged, so repeated calls never duplicate it.
 """
 import datetime
+import uuid
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
@@ -124,6 +125,28 @@ def _p(player_id, name, position, squad_id, role="starter"):
     return {"player_id": player_id, "name": name, "position": position, "squad_id": squad_id, "role": role}
 
 
+def _squad(prefix, squad_id, names, positions):
+    """Demo players p1 captain, p2 vice-captain, the rest starters."""
+    roles = ["captain", "vice_captain"] + ["starter"] * len(names)
+    return [_p(f"{prefix}-p{i + 1}", n, pos, squad_id, roles[i]) for i, (n, pos) in enumerate(zip(names, positions))]
+
+
+def _sport_league(league_id, sport_id, max_size, required, squads):
+    """One demo roster league per extra sport (same ids as the scoring demo leagues in scoring.py)."""
+    return {"league": {"league_id": league_id, "tenant_id": "tenant-alpha", "sport_id": sport_id,
+                       "transfer_window": {"open": "2026-01-01", "close": "2026-12-31"},
+                       "max_squad_size": max_size, "required_positions": required},
+            "squads": [{"squad_id": sid, "club_id": sid, "tenant_id": "tenant-alpha", "name": name}
+                       for sid, name, _, _ in squads],
+            "players": [p for sid, _, names, positions in squads
+                        for p in _squad(sid.split("-", 1)[1], sid, names, positions)],
+            "matches_in_progress": []}
+
+
+HOOPS = ["pg", "sg", "sf", "pf", "c"]
+CRICKET = ["batter", "batter", "wicketkeeper", "allrounder", "bowler", "bowler"]
+ESPORTS = ["igl", "entry", "support", "awp", "lurker"]
+
 BASELINE_LEAGUES = [
     {"league": {"league_id": "league-alpha-1", "tenant_id": "tenant-alpha", "sport_id": "football",
                 "transfer_window": {"open": "2026-01-01", "close": "2026-12-31"},
@@ -131,7 +154,11 @@ BASELINE_LEAGUES = [
      "squads": [{"squad_id": "club-alpha-1", "club_id": "club-alpha-1", "tenant_id": "tenant-alpha",
                  "name": "Alpha United"},
                 {"squad_id": "club-alpha-2", "club_id": "club-alpha-2", "tenant_id": "tenant-alpha",
-                 "name": "Alpha Rovers"}],
+                 "name": "Alpha Rovers"},
+                {"squad_id": "club-alpha-3", "club_id": "club-alpha-3", "tenant_id": "tenant-alpha",
+                 "name": "Alpha City"},
+                {"squad_id": "club-alpha-4", "club_id": "club-alpha-4", "tenant_id": "tenant-alpha",
+                 "name": "Alpha Athletic"}],
      "players": [
          _p("player-alpha-1", "Ahmed Raza", "fw", "club-alpha-1", "captain"),
          _p("player-alpha-3", "Usman Tariq", "gk", "club-alpha-1"),
@@ -144,7 +171,11 @@ BASELINE_LEAGUES = [
          _p("player-alpha-9", "Kamran Ali", "df", "club-alpha-2", "vice_captain"),
          _p("player-alpha-10", "Danish Javed", "df", "club-alpha-2"),
          _p("player-alpha-11", "Omar Farooq", "fw", "club-alpha-2"),
-         _p("player-alpha-12", "Yasir Hussain", "gk", "club-alpha-2", "substitute")],
+         _p("player-alpha-12", "Yasir Hussain", "gk", "club-alpha-2", "substitute"),
+         *_squad("city", "club-alpha-3", ["Arslan Butt", "Waleed Riaz", "Talha Anjum", "Shoaib Akhtar",
+                                          "Nabeel Zafar"], ["gk", "df", "df", "mf", "fw"]),
+         *_squad("athletic", "club-alpha-4", ["Moiz Qadir", "Haris Sohail", "Sameer Ali", "Fahad Mirza",
+                                              "Rizwan Ahmed"], ["gk", "df", "mf", "mf", "fw"])],
      "matches_in_progress": []},
     {"league": {"league_id": "league-beta-1", "tenant_id": "tenant-beta", "sport_id": "football",
                 "transfer_window": {"open": "2026-01-01", "close": "2026-12-31"},
@@ -156,6 +187,18 @@ BASELINE_LEAGUES = [
          _p("player-beta-2", "Waqas Ahmed", "gk", "club-beta-1"),
          _p("player-beta-3", "Junaid Akram", "df", "club-beta-1")],
      "matches_in_progress": []},
+    _sport_league("alpha-hoops", "basketball", 15, {}, [
+        ("hoops-falcons", "Karachi Falcons", ["Umair Shah", "Daniyal Khan", "Saif Ullah", "Jibran Ali", "Mustafa Iqbal"], HOOPS),
+        ("hoops-titans", "Lahore Titans", ["Asad Javed", "Bilal Saeed", "Huzaifa Noor", "Ibrahim Malik", "Ahsan Raza"], HOOPS),
+        ("hoops-comets", "Islamabad Comets", ["Shahzaib Ali", "Taimoor Khan", "Zohaib Aslam", "Rayyan Butt", "Owais Akram"], HOOPS)]),
+    _sport_league("alpha-cricket", "cricket", 18, {"wicketkeeper": 1}, [
+        ("cricket-lions", "Multan Lions", ["Abdullah Shafiq", "Imam Haq", "Sarfaraz Khan", "Shadab Ali", "Naseem Shah", "Haris Rauf"], CRICKET),
+        ("cricket-hawks", "Peshawar Hawks", ["Saim Ayub", "Fakhar Zaman", "Mohammad Haris", "Aamer Jamal", "Shaheen Afridi", "Abrar Ahmed"], CRICKET),
+        ("cricket-tigers", "Quetta Tigers", ["Hasan Nawaz", "Usman Khan", "Rohail Nazir", "Faheem Ashraf", "Mir Hamza", "Usama Mir"], CRICKET)]),
+    _sport_league("alpha-esports", "esports", 8, {}, [
+        ("esports-nova", "Team Nova", ["Arsalan Ash", "Hamza Gul", "Kashan Tariq", "Raheel Aziz", "Momin Saqib"], ESPORTS),
+        ("esports-pulse", "Pulse Gaming", ["Zubair Hassan", "Aliyan Shah", "Farhan Zia", "Saqlain Mir", "Adeel Raza"], ESPORTS),
+        ("esports-vortex", "Vortex", ["Junaid Babar", "Hassan Ijaz", "Waqar Shah", "Talal Sami", "Kamil Ahmad"], ESPORTS)]),
 ]
 
 
@@ -179,6 +222,20 @@ BASELINE_CLUBS = [
     ("club-beta-1", "tenant-beta", "Beta Strikers",
      _club_profile("Beta Stadium", 33.6844, 73.0479, "betastrikers", "Kashif Ali", "Mehwish Khan",
                    "Ayesha Siddiqui", [("2025", 16, 9, 3), ("2026", 9, 5, 1)])),
+    *[(club_id, "tenant-alpha", name, _club_profile(venue, lat, lng, club_id.replace("-", ""), coach, manager,
+                                                     physio, [("2025", 12, won, 2), ("2026", 6, won // 2, 1)]))
+      for club_id, name, venue, lat, lng, coach, manager, physio, won in [
+          ("club-alpha-3", "Alpha City", "City Park Stadium", 25.3960, 68.3578, "Javed Akhtar", "Sobia Naz", "Erum Shah", 6),
+          ("club-alpha-4", "Alpha Athletic", "Athletic Grounds", 30.1575, 71.5249, "Rashid Latif", "Hira Mani", "Maria Wasti", 5),
+          ("hoops-falcons", "Karachi Falcons", "Falcons Dome", 24.8607, 67.0011, "Naveed Akram", "Saba Qamar", "Amna Ilyas", 8),
+          ("hoops-titans", "Lahore Titans", "Titans Court", 31.5204, 74.3587, "Shahid Hameed", "Zara Noor", "Iqra Aziz", 7),
+          ("hoops-comets", "Islamabad Comets", "Comets Arena", 33.6844, 73.0479, "Kamran Akmal", "Mahira Khan", "Sana Fakhar", 4),
+          ("cricket-lions", "Multan Lions", "Multan Cricket Stadium", 30.1575, 71.5249, "Mushtaq Ahmed", "Nida Dar", "Bismah Maroof", 7),
+          ("cricket-hawks", "Peshawar Hawks", "Arbab Niaz Stadium", 34.0151, 71.5249, "Younis Khan", "Aliya Riaz", "Sidra Amin", 6),
+          ("cricket-tigers", "Quetta Tigers", "Bugti Stadium", 30.1798, 66.9750, "Moin Khan", "Javeria Khan", "Diana Baig", 5),
+          ("esports-nova", "Team Nova", "Nova Studio", 31.5204, 74.3587, "Arslan Siddiqui", "Hania Amir", "Ayeza Khan", 9),
+          ("esports-pulse", "Pulse Gaming", "Pulse Arena", 24.8607, 67.0011, "Sumail Hassan", "Kubra Khan", "Yumna Zaidi", 6),
+          ("esports-vortex", "Vortex", "Vortex Hub", 33.6844, 73.0479, "Faizan Tariq", "Saboor Aly", "Sajal Aly", 3)]],
 ]
 
 TABLES = ("roster_leagues", "roster_squads", "roster_players", "roster_registrations", "roster_matches",
@@ -689,6 +746,83 @@ async def prod_transfer(request: Request, user: dict = Depends(current_user)):
                 raise forbidden("Club managers may only move players of their own club")
         status, response = apply_transfer(conn, body)
     return JSONResponse(status_code=status, content=response)
+
+
+@router.post("/api/v1/roster/players", status_code=201)
+async def prod_add_player(request: Request, user: dict = Depends(current_user)):
+    """FR-2.2 "add": register a new player straight into a squad (super_admin, or the manager of that
+    squad's club). Same window and squad-size rules as a transfer; recorded in the audit trail."""
+    if user.get("role") not in ("super_admin", "club_manager"):
+        raise forbidden("Only a club manager or super admin may add players")
+    body = await read_json(request)
+    if not isinstance(body, dict):
+        raise validation("body")
+    bad = [k for k in ("league_id", "squad_id") if not is_id(body.get(k))]
+    bad += [] if _is_text(body.get("name"), 120) and body["name"].strip() else ["name"]
+    bad += [] if _is_text(body.get("position"), 64) else ["position"]
+    role = body.get("role") or "substitute"
+    bad += [] if role in ROLES else ["role"]
+    if body.get("reason") is not None and not _is_text(body["reason"], 2000):
+        bad.append("reason")
+    if bad:
+        raise validation(bad, "Invalid player")
+    today = _today()
+    with pool.connection() as conn:
+        # Same league row lock as apply_transfer, so squad counts stay exact.
+        league = conn.execute("SELECT * FROM roster_leagues WHERE league_id = %s FOR UPDATE",
+                              (body["league_id"],)).fetchone()
+        if league is None:
+            raise not_found("LEAGUE_NOT_FOUND", league_id=body["league_id"])
+        squad = conn.execute("SELECT * FROM roster_squads WHERE league_id = %s AND squad_id = %s",
+                             (league["league_id"], body["squad_id"])).fetchone()
+        if squad is None:
+            raise not_found("SQUAD_NOT_FOUND", squad_id=body["squad_id"])
+        if not _is_super(user) and (squad["club_id"] != user.get("club_id")
+                                    or squad["tenant_id"] != user.get("tenant_id")):
+            raise forbidden("Club managers may only add players to their own club")
+        if not league["window_open"] <= today <= league["window_close"]:
+            raise conflict("TRANSFER_WINDOW_CLOSED", "Registrations are closed", effective_date=today.isoformat(),
+                           open=_iso(league["window_open"]), close=_iso(league["window_close"]))
+        states = [_state_at(reg, today) for reg in _latest_registrations(conn, league["league_id"]).values()]
+        size = sum(1 for s in states if s["squad_id"] == squad["squad_id"])
+        if size + 1 > league["max_squad_size"]:
+            raise conflict("SQUAD_FULL", "Squad is full", squad_id=squad["squad_id"], squad_size=size,
+                           max_squad_size=league["max_squad_size"])
+        player_id = str(uuid.uuid4())
+        ord_ = conn.execute("SELECT coalesce(max(ord), -1) + 1 AS n FROM roster_players WHERE league_id = %s",
+                            (league["league_id"],)).fetchone()["n"]
+        conn.execute("INSERT INTO roster_players (player_id, league_id, name, position, ord) VALUES (%s, %s, %s, %s, %s)",
+                     (player_id, league["league_id"], body["name"].strip(), body["position"], ord_))
+        conn.execute("INSERT INTO roster_registrations (player_id, league_id, reg_type, squad_id, start_date, role) "
+                     "VALUES (%s, %s, 'add', %s, %s, %s)", (player_id, league["league_id"], squad["squad_id"], today, role))
+        entry = _append_audit(conn, player_id, league["league_id"], {
+            "action": "add", "player_id": player_id, "league_id": league["league_id"], "from_squad_id": None,
+            "to_squad_id": squad["squad_id"], "effective_date": today.isoformat(), "state": "active",
+            "who": user.get("email") or user.get("sub"), "when": utc_now_iso(), "why": body.get("reason")})
+    return {"player_id": player_id, "name": body["name"].strip(), "position": body["position"], "role": role,
+            "squad_id": squad["squad_id"], "league_id": league["league_id"], "audit_entry": entry}
+
+
+@router.delete("/api/v1/clubs/{club_id}")
+def delete_club(club_id: str, user: dict = Depends(current_user)):
+    """Platform admin only. A club with fixtures or registered players cannot be deleted (results, standings
+    and the roster audit trail depend on it): move or release its players and remove its fixtures first."""
+    if not _is_super(user):
+        raise forbidden("Only the platform admin can delete clubs")
+    with pool.connection() as conn:
+        exists = conn.execute("SELECT 1 FROM roster_clubs WHERE club_id = %s UNION ALL "
+                              "SELECT 1 FROM roster_squads WHERE club_id = %s LIMIT 1", (club_id, club_id)).fetchone()
+        if exists is None:
+            raise ApiError(404, "CLUB_NOT_FOUND", f"Club {club_id} not found", {"club_id": club_id})
+        fixtures = conn.execute("SELECT count(*) AS n FROM scoring_matches WHERE home = %s OR away = %s",
+                                (club_id, club_id)).fetchone()["n"]
+        players = len(_club_roster(conn, club_id, _today()))
+        if fixtures or players:
+            raise conflict("CLUB_IN_USE", "This club still has fixtures or players", club_id=club_id,
+                           fixtures=fixtures, players=players)
+        conn.execute("DELETE FROM roster_squads WHERE club_id = %s", (club_id,))
+        conn.execute("DELETE FROM roster_clubs WHERE club_id = %s", (club_id,))
+    return {"club_id": club_id, "status": "deleted"}
 
 
 @router.get("/api/v1/roster/players/{player_id}/history")

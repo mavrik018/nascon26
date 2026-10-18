@@ -1,21 +1,30 @@
 import 'dart:ui';
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder, CupertinoSlidingSegmentedControl;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../core/app_state.dart';
 import '../toolkit/01_design_system/app_tokens.dart';
 import '../toolkit/02_ui_elements/pressable.dart';
+import '../widgets/sync_banner.dart';
+import 'profile_screens.dart' show SyncPage;
+import 'ios_ui.dart';
 import 'sample_data.dart';
+
+export 'ios_ui.dart';
 
 const ocean = Color(0xFF006D9F);
 const ink = Color(0xFF102A43);
 const muted = Color(0xFF52606D);
 const green = Color(0xFF087453);
 
-ThemeData oceanTheme() => ThemeData(
+/// [primary] is the tenant's brand colour (white-label, FR-2.1); the ocean blue is the fallback.
+ThemeData oceanTheme({Color primary = ocean}) => ThemeData(
   useMaterial3: true,
   fontFamily: 'Inter',
-  colorScheme: ColorScheme.fromSeed(seedColor: ocean).copyWith(
-    primary: ocean,
-    secondary: ocean,
+  colorScheme: ColorScheme.fromSeed(seedColor: primary).copyWith(
+    primary: primary,
+    secondary: primary,
     onSurface: ink,
     surface: const Color(0xFFF1F7FB),
   ),
@@ -71,7 +80,7 @@ ThemeData oceanTheme() => ThemeData(
   ),
   filledButtonTheme: FilledButtonThemeData(
     style: FilledButton.styleFrom(
-      backgroundColor: ocean,
+      backgroundColor: primary,
       foregroundColor: Colors.white,
       minimumSize: const Size(48, 50),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -89,6 +98,13 @@ ThemeData oceanTheme() => ThemeData(
     ),
   ),
   dividerTheme: const DividerThemeData(color: Color(0xFFCBDFE8), space: 24),
+  // iOS slide + swipe-back on every platform, so screens move the same way everywhere.
+  pageTransitionsTheme: const PageTransitionsTheme(
+    builders: {
+      TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+    },
+  ),
   snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
 );
 
@@ -119,33 +135,47 @@ class GlassCard extends StatelessWidget {
     super.key,
     required this.child,
     this.padding = const EdgeInsets.all(20),
-    this.opacity = .72,
+    this.opacity = .78,
   });
   final Widget child;
   final EdgeInsetsGeometry padding;
   final double opacity;
   @override
-  Widget build(BuildContext context) => Container(
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(Radii.xl),
-      boxShadow: AppShadows.lifted(ocean),
-    ),
-    child: ClipRRect(
-      borderRadius: BorderRadius.circular(Radii.xl),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: Container(
-          padding: padding,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: opacity),
-            borderRadius: BorderRadius.circular(Radii.xl),
-            border: Border.all(color: Colors.white.withValues(alpha: .82)),
+  Widget build(BuildContext context) {
+    final topAlpha = (opacity + 0.14).clamp(0.0, 0.96);
+    final botAlpha = (opacity - 0.04).clamp(0.0, 0.92);
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(Radii.xl),
+        boxShadow: AppShadows.lifted(ocean),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(Radii.xl),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: Container(
+            padding: padding,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.white.withValues(alpha: topAlpha),
+                  Colors.white.withValues(alpha: botAlpha),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(Radii.xl),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: .94),
+                width: 1.5,
+              ),
+            ),
+            child: Material(type: MaterialType.transparency, child: child),
           ),
-          child: Material(type: MaterialType.transparency, child: child),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class OceanPage extends StatelessWidget {
@@ -162,7 +192,10 @@ class OceanPage extends StatelessWidget {
   final List<Widget> children, actions;
   final Widget? bottom;
   @override
-  Widget build(BuildContext context) => OceanBackground(
+  Widget build(BuildContext context) {
+    final state = AppScope.maybeOf(context);
+    final tenant = state?.tenant;
+    return OceanBackground(
     child: Scaffold(
       bottomNavigationBar: bottom,
       body: SafeArea(
@@ -189,15 +222,36 @@ class OceanPage extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                subtitle ?? 'ALPHA SPORTS LEAGUE',
-                                style: const TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                  letterSpacing: 1.5,
-                                ),
+                              Row(
+                                children: [
+                                  if (tenant?.logoUrl != null) ...[
+                                    ClipOval(
+                                      child: Image.network(
+                                        tenant!.logoUrl!,
+                                        width: 18,
+                                        height: 18,
+                                        fit: BoxFit.cover,
+                                        semanticLabel: '${tenant.name} logo',
+                                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                  ],
+                                  Flexible(
+                                    child: Text(
+                                      subtitle ?? (tenant?.name ?? 'Alpha Sports League').toUpperCase(),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontFamily: 'Inter',
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                        letterSpacing: 1.5,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                               const SizedBox(height: 5),
                               Text(
@@ -214,6 +268,18 @@ class OceanPage extends StatelessWidget {
                           ),
                         ),
                         ...actions,
+                        if (state != null)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: SyncDot(
+                              state: state,
+                              onTap: context.findAncestorWidgetOfExactType<SyncPage>() != null
+                                  ? null
+                                  : () => Navigator.of(context).push(
+                                      MaterialPageRoute<void>(builder: (_) => SyncPage(state: state)),
+                                    ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -222,10 +288,11 @@ class OceanPage extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
                   sliver: SliverList.list(
                     children: [
-                      for (final child in children)
+                      for (final (i, child) in children.indexed)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 16),
-                          child: child,
+                          // Keyed children (e.g. list items) get their own entrance when they appear.
+                          child: Entrance(key: child.key == null ? null : ValueKey(child.key), index: i, child: child),
                         ),
                     ],
                   ),
@@ -237,6 +304,7 @@ class OceanPage extends StatelessWidget {
       ),
     ),
   );
+  }
 }
 
 class Tag extends StatelessWidget {
@@ -285,9 +353,21 @@ class Crest extends StatelessWidget {
     height: size,
     padding: const EdgeInsets.all(5),
     decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: .85),
+      color: Colors.white.withValues(alpha: .90),
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: Colors.white),
+      border: Border.all(color: Colors.white, width: 1.5),
+      boxShadow: [
+        BoxShadow(
+          color: color.withValues(alpha: .28),
+          blurRadius: 12,
+          offset: const Offset(0, 6),
+        ),
+        BoxShadow(
+          color: const Color(0xFF041524).withValues(alpha: .10),
+          blurRadius: 3,
+          offset: const Offset(0, 2),
+        ),
+      ],
     ),
     child: Container(
       alignment: Alignment.center,
@@ -339,7 +419,43 @@ class ChoiceRow extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final bool light;
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
+  Widget build(BuildContext context) => items.length <= 4 ? _segmented() : _chips();
+
+  /// iOS sliding segmented control: the thumb glides between options.
+  Widget _segmented() => SizedBox(
+    width: double.infinity,
+    child: CupertinoSlidingSegmentedControl<String>(
+      groupValue: value,
+      backgroundColor: light ? Colors.white.withValues(alpha: .22) : const Color(0x1F767680),
+      thumbColor: Colors.white,
+      children: {
+        for (final item in items)
+          item: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 36),
+            child: Center(
+              child: Text(
+                item,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 13,
+                  fontWeight: item == value ? FontWeight.w700 : FontWeight.w600,
+                  color: item == value ? ocean : (light ? Colors.white : ink),
+                ),
+              ),
+            ),
+          ),
+      },
+      onValueChanged: (v) {
+        if (v == null) return;
+        HapticFeedback.selectionClick();
+        onChanged(v);
+      },
+    ),
+  );
+
+  Widget _chips() => SingleChildScrollView(
     scrollDirection: Axis.horizontal,
     child: Row(
       children: [
@@ -502,8 +618,8 @@ class MatchCard extends StatelessWidget {
 
 void openPage(BuildContext context, Widget page) =>
     Navigator.push(context, MaterialPageRoute<void>(builder: (_) => page));
-void notice(BuildContext context, String text) =>
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+void notice(BuildContext context, String text, {ToastKind kind = ToastKind.info, VoidCallback? onRetry}) =>
+    showToast(context, text, kind: kind, onRetry: onRetry);
 
 class DetailRow extends StatelessWidget {
   const DetailRow(this.label, this.value, {super.key, this.bold = false});

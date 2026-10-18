@@ -113,7 +113,7 @@ class _RosterActionScreenState extends State<RosterActionScreen> {
       _error = null;
     });
     final body = <String, dynamic>{
-      'request_id': newId('tr'),
+      'request_id': newId(),
       'league_id': state.rosterLeagueId,
       'player_id': _playerId,
       'type': _type,

@@ -57,9 +57,16 @@ CREATE TABLE IF NOT EXISTS scoring_events (
     UNIQUE (match_id, sequence)
 );
 CREATE INDEX IF NOT EXISTS scoring_matches_league_idx ON scoring_matches (league_id);
+-- Rules in force when the league / match was created: editing a sport never rewrites past results.
+ALTER TABLE scoring_leagues ADD COLUMN IF NOT EXISTS sport_config JSONB;
+ALTER TABLE scoring_matches ADD COLUMN IF NOT EXISTS sport_config JSONB;
 """
 
-EVENT_TYPES = {"match_init", "match_start", "score", "discipline", "tiebreak_winner", "match_end", "compensation"}
+EVENT_TYPES = {"match_init", "match_start", "score", "discipline", "tiebreak_winner", "match_end", "compensation",
+               "status_change"}
+# FR-1.3 status machine for status_change events (match_start / match_end cover upcoming -> in_progress -> completed).
+STATUS_TRANSITIONS = {"upcoming": {"postponed", "cancelled"}, "in_progress": {"abandoned"},
+                      "postponed": {"upcoming", "cancelled"}}
 COMPENSABLE = {"score", "discipline", "tiebreak_winner"}
 DEFAULT_POINTS = {"win": 3, "draw": 1, "loss": 0}
 
@@ -223,12 +230,13 @@ def register_league(conn, body, tenant_id: str | None = None, name: str | None =
         lots_seed = current_seed_conn(conn)
     conn.execute(
         "INSERT INTO scoring_leagues (league_id, sport_id, tenant_id, name, teams, points, tie_break_order, spots,"
-        " lots_seed) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        " lots_seed, sport_config) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (body["league_id"], body["sport_id"], tenant_id, name, Jsonb(body["teams"]), Jsonb(points), Jsonb(order),
-         body["qualification"]["spots"], lots_seed))
+         body["qualification"]["spots"], lots_seed, Jsonb(sport)))
     for f in body["fixtures"]:
-        conn.execute("INSERT INTO scoring_matches (match_id, league_id, sport_id, home, away) VALUES (%s,%s,%s,%s,%s)",
-                     (f["match_id"], body["league_id"], body["sport_id"], f["home"], f["away"]))
+        conn.execute("INSERT INTO scoring_matches (match_id, league_id, sport_id, home, away, sport_config)"
+                     " VALUES (%s,%s,%s,%s,%s,%s)",
+                     (f["match_id"], body["league_id"], body["sport_id"], f["home"], f["away"], Jsonb(sport)))
     return {"league_id": body["league_id"], "status": "created", "team_count": len(body["teams"]),
             "fixture_count": len(body["fixtures"])}
 
@@ -272,6 +280,11 @@ def _validate_event(body) -> dict:
             bad.append("payload.event_type")
         if t == "discipline" and not is_int(p.get("points")):
             bad.append("payload.points")
+    elif t == "status_change":
+        if p.get("status") not in ("upcoming", "postponed", "abandoned", "cancelled"):
+            bad.append("payload.status")
+        if not isinstance(p.get("reason"), str):
+            bad.append("payload.reason")
     elif t == "compensation":
         if not is_id(p.get("compensates")):
             bad.append("payload.compensates")
@@ -284,6 +297,11 @@ def _validate_event(body) -> dict:
 
 def _request_key(body: dict) -> str:
     return canonical({k: body[k] for k in ("event_id", "match_id", "type", "payload")})
+
+
+def match_sport(conn, match: dict) -> dict:
+    """The sport rules this match was created under (later edits to the sport apply to new matches only)."""
+    return match.get("sport_config") or sports.get_sport(match["sport_id"], conn)
 
 
 def load_match(conn, match_id: str):
@@ -303,9 +321,10 @@ def find_event(conn, event_id: str):
     return conn.execute("SELECT request, response FROM scoring_events WHERE event_id = %s", (event_id,)).fetchone()
 
 
-def append_event(conn, body) -> tuple[int, dict]:
+def append_event(conn, body, rescheduled: bool = False) -> tuple[int, dict]:
     """Validate and append one event. Returns (201, response), or (200, stored response) on an
-    identical replay; raises ApiError otherwise. The caller owns the transaction."""
+    identical replay; raises ApiError otherwise. The caller owns the transaction.
+    rescheduled=True only from schedule.reschedule, after its conflict check passed."""
     body = _validate_event(body)
     key = _request_key(body)
     t, p, match_id = body["type"], body["payload"], body["match_id"]
@@ -323,14 +342,16 @@ def append_event(conn, body) -> tuple[int, dict]:
         sport = sports.get_sport(p["sport_id"], conn)  # 404 SPORT_NOT_FOUND
         if load_match(conn, match_id):
             raise conflict("MATCH_EXISTS", f"Match {match_id} already exists", match_id=match_id)
-        conn.execute("INSERT INTO scoring_matches (match_id, league_id, sport_id, home, away) VALUES (%s,%s,%s,%s,%s)",
-                     (match_id, p.get("league_id"), sport["sport_id"], p["home_team_id"], p["away_team_id"]))
+        conn.execute("INSERT INTO scoring_matches (match_id, league_id, sport_id, home, away, sport_config)"
+                     " VALUES (%s,%s,%s,%s,%s,%s)",
+                     (match_id, p.get("league_id"), sport["sport_id"], p["home_team_id"], p["away_team_id"],
+                      Jsonb(sport)))
         return 201, _store(conn, body, key, sequence=1, compensates=None)
 
     match = load_match(conn, match_id)
     if not match:
         raise not_found("MATCH_NOT_FOUND", match_id=match_id)
-    sport = sports.get_sport(match["sport_id"], conn)
+    sport = match_sport(conn, match)
     events = load_events(conn, match_id)
     state = project_state(match, sport, events)
 
@@ -356,6 +377,13 @@ def append_event(conn, body) -> tuple[int, dict]:
         home, away = state["teams"][match["home"]], state["teams"][match["away"]]
         if home["score"] == away["score"] and not sport["draw_allowed"] and state["tiebreak_winner"] is None:
             raise conflict("TIE_NOT_ALLOWED", "Score is level and this sport does not allow draws", match_id=match_id)
+    elif t == "status_change":
+        if p["status"] == "upcoming" and not rescheduled:
+            raise conflict("ILLEGAL_TRANSITION", "Use reschedule to bring a postponed match back",
+                           match_id=match_id, status=state["status"])
+        if p["status"] not in STATUS_TRANSITIONS.get(state["status"], ()):
+            raise conflict("ILLEGAL_TRANSITION", f"Cannot change a {state['status']} match to {p['status']}",
+                           match_id=match_id, status=state["status"])
     elif t == "compensation":
         target = conn.execute("SELECT match_id, type FROM scoring_events WHERE event_id = %s",
                               (p["compensates"],)).fetchone()
@@ -419,6 +447,8 @@ def project_state(match: dict, sport: dict, events: list[dict]) -> dict:
             status = "in_progress"
         elif t == "match_end":
             status = "completed"
+        elif t == "status_change":
+            status = p["status"]
         elif t == "score":
             rule, team = rules.get(p["event_type"], {}), teams[p["team_id"]]
             if model == "event":
@@ -444,7 +474,7 @@ def project(conn, match_id: str) -> dict:
     match = load_match(conn, match_id)
     if not match:
         raise not_found("MATCH_NOT_FOUND", match_id=match_id)
-    return build_projection(match, sports.get_sport(match["sport_id"], conn), load_events(conn, match_id))
+    return build_projection(match, match_sport(conn, match), load_events(conn, match_id))
 
 
 def build_projection(match: dict, sport: dict, events: list[dict]) -> dict:
@@ -517,7 +547,7 @@ def league_fixtures(league_id: str, user: dict = Depends(auth.current_user)):
                             (league_id,)).fetchall()
         result = []
         for m in rows:
-            p = build_projection(m, sports.get_sport(m["sport_id"], conn), load_events(conn, m["match_id"]))
+            p = build_projection(m, match_sport(conn, m), load_events(conn, m["match_id"]))
             result.append({"match_id": m["match_id"], "league_id": league_id, "home": m["home"], "away": m["away"],
                            "status": p["status"], "scheduled_at": m["scheduled_at"],
                            "home_score": p["home"]["score"], "away_score": p["away"]["score"]})
@@ -527,10 +557,11 @@ def league_fixtures(league_id: str, user: dict = Depends(auth.current_user)):
 def _pinned_product(conn, product_id):
     if not product_id:
         return None
+    from .store import PRICE_SQL  # store imports nothing from scoring; import here keeps load order free
     try:
         with conn.transaction():
             row = conn.execute(
-                "SELECT p.product_id, p.name, min(v.price_minor) AS price_minor FROM store_products p"
+                f"SELECT p.product_id, p.name, min({PRICE_SQL}) AS price_minor FROM store_products p"
                 " JOIN store_variants v ON v.product_id = p.product_id WHERE p.product_id = %s"
                 " GROUP BY p.product_id, p.name", (product_id,)).fetchone()
     except Exception:
@@ -539,27 +570,56 @@ def _pinned_product(conn, product_id):
             "currency": "PKR"} if row else None
 
 
+def match_view(conn, match_id: str, user: dict) -> dict:
+    """What the app shows on the match page: projection + schedule + pinned product."""
+    match = load_match(conn, match_id)
+    if not match:
+        raise not_found("MATCH_NOT_FOUND", match_id=match_id)
+    if match["league_id"]:
+        league_for_user(conn, match["league_id"], user)
+    sport = match_sport(conn, match)
+    result = build_projection(match, sport, load_events(conn, match_id))
+    result["sport_name"] = sport["name"]
+    result["event_types"] = list(sport["scoring_events"])
+    result["scheduled_at"] = match["scheduled_at"]
+    result["venue_id"] = match.get("venue_id")
+    result["pinned_product"] = _pinned_product(conn, match["pinned_product_id"])
+    return result
+
+
 @router.get("/api/v1/matches/{match_id}")
 def match_detail(match_id: str, user: dict = Depends(auth.current_user)):
+    with pool.connection() as conn:
+        return match_view(conn, match_id, user)
+
+
+@router.post("/api/v1/matches/{match_id}/pin")
+async def pin_product(match_id: str, request: Request, user: dict = Depends(auth.current_user)):
+    """FR-2.3 showcase: pin (or unpin with null) a store product on a match page. Stream clients get it
+    within a second because the stream pushes whenever the match view changes."""
+    body = await read_json(request)
+    if not isinstance(body, dict) or "product_id" not in body:
+        raise validation("product_id")
+    product_id = body["product_id"]
+    if product_id is not None and not is_id(product_id):
+        raise validation("product_id")
     with pool.connection() as conn:
         match = load_match(conn, match_id)
         if not match:
             raise not_found("MATCH_NOT_FOUND", match_id=match_id)
-        if match["league_id"]:
-            league_for_user(conn, match["league_id"], user)
-        sport = sports.get_sport(match["sport_id"], conn)
-        result = build_projection(match, sport, load_events(conn, match_id))
-        result["event_types"] = list(sport["scoring_events"])
-        result["scheduled_at"] = match["scheduled_at"]
-        result["pinned_product"] = _pinned_product(conn, match["pinned_product_id"])
-    return result
+        if not can_score(user, match["league_id"]):
+            raise auth.forbidden("Only the league organizer can pin products on this match")
+        if product_id is not None and _pinned_product(conn, product_id) is None:
+            raise not_found("PRODUCT_NOT_FOUND", product_id=product_id)
+        conn.execute("UPDATE scoring_matches SET pinned_product_id = %s WHERE match_id = %s", (product_id, match_id))
+        return match_view(conn, match_id, user)
 
 
 @router.get("/api/v1/matches/{match_id}/stream")
 async def match_stream(match_id: str, request: Request, user: dict = Depends(auth.current_user)):
-    """Realtime layer (SSE): pushes the full projection whenever the match's event log grows,
-    i.e. on every score, status change or compensation. Clients that cannot keep a stream
-    open can poll GET /api/v1/matches/{id} instead."""
+    """Realtime layer (SSE): pushes the match view (same body as GET /api/v1/matches/{id}) whenever it
+    changes: a score, status change, compensation, reschedule or newly pinned product. Clients that
+    cannot keep a stream open can poll GET /api/v1/matches/{id} instead."""
     import asyncio
     import json
 
@@ -568,16 +628,16 @@ async def match_stream(match_id: str, request: Request, user: dict = Depends(aut
 
     def snapshot():
         with pool.connection() as conn:
-            return project(conn, match_id)
+            return json.dumps(match_view(conn, match_id, user))
 
-    first = await run_in_threadpool(snapshot)  # 404 before the stream starts
+    first = await run_in_threadpool(snapshot)  # 404 / 403 before the stream starts
 
     async def events():
         last, current = None, first
         while not await request.is_disconnected():
-            if current["version"] != last:
-                last = current["version"]
-                yield f"event: match\ndata: {json.dumps(current)}\n\n"
+            if current != last:
+                last = current
+                yield f"event: match\ndata: {current}\n\n"
             else:
                 yield ": keep-alive\n\n"
             await asyncio.sleep(1)

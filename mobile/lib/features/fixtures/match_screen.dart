@@ -120,7 +120,7 @@ class _MatchScreenState extends State<MatchScreen> {
     if (!ok) return;
     await _submit(
       {
-        'event_id': newId('m'),
+        'event_id': newId(),
         'match_id': widget.matchId,
         'type': 'score',
         'payload': {'team_id': teamId, 'event_type': eventType},
@@ -160,7 +160,7 @@ class _MatchScreenState extends State<MatchScreen> {
     if (ok != true || !mounted) return;
     await _submit(
       {
-        'event_id': newId('m'),
+        'event_id': newId(),
         'match_id': widget.matchId,
         'type': 'compensation',
         'payload': {'compensates': asStr(event['event_id']), 'reason': reason},
@@ -179,7 +179,7 @@ class _MatchScreenState extends State<MatchScreen> {
     );
     if (!ok) return;
     await _submit(
-      {'event_id': newId('m'), 'match_id': widget.matchId, 'type': type, 'payload': {}},
+      {'event_id': newId(), 'match_id': widget.matchId, 'type': type, 'payload': {}},
       label,
       '$label: done',
     );

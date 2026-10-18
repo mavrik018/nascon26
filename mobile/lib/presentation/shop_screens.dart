@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../toolkit/02_ui_elements/pressable.dart';
@@ -192,6 +193,13 @@ class _ShopPageState extends State<ShopPage> {
     _load();
   }
 
+  Future<void> _openProduct(StoreProduct product) async {
+    final deleted = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => ProductPage(product: product, state: widget.state)),
+    );
+    if (deleted == true) await _load();
+  }
+
   Future<void> _load() async {
     setState(() {
       loading = true;
@@ -257,9 +265,8 @@ class _ShopPageState extends State<ShopPage> {
             tooltip: 'Add merchandise',
             onPressed: () => _addProduct(context),
             icon: const Icon(Icons.add_box_outlined, color: Colors.white),
-          )
-        else
-          _cartButton(context, widget.state),
+          ),
+        _cartButton(context, widget.state),
       ],
       children: [
         if (isStoreManager(widget.state))
@@ -270,7 +277,7 @@ class _ShopPageState extends State<ShopPage> {
                 const Text('Store manager',
                     style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: ink)),
                 const SizedBox(height: 4),
-                const Text('You manage this catalogue. Fans and players buy; you add products and watch stock.',
+                const Text('You manage this catalogue: add products and watch stock. You can still buy items too.',
                     style: TextStyle(color: muted)),
                 const SizedBox(height: 12),
                 SizedBox(
@@ -318,10 +325,7 @@ class _ShopPageState extends State<ShopPage> {
                     if (featured != null) ...[
                       const SizedBox(height: 14),
                       FilledButton(
-                        onPressed: () => openPage(
-                          context,
-                          ProductPage(product: featured, state: widget.state),
-                        ),
+                        onPressed: () => _openProduct(featured),
                         style: FilledButton.styleFrom(
                           backgroundColor: Colors.white,
                           foregroundColor: ocean,
@@ -392,7 +396,7 @@ class _ShopPageState extends State<ShopPage> {
                       width: width,
                       child: _ProductCard(
                         product: p,
-                        onTap: () => openPage(context, ProductPage(product: p, state: widget.state)),
+                        onTap: () => _openProduct(p),
                       ),
                     ),
                 ],
@@ -690,17 +694,32 @@ class _ProductPageState extends State<ProductPage> {
       ),
     );
     setState(() => quantity = 1);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('Added $q × ${widget.product.name} (${v.label}) to your cart.'),
-          action: SnackBarAction(
-            label: 'View cart',
-            onPressed: () => openPage(context, CartPage(state: widget.state)),
-          ),
-        ),
-      );
+    showToast(
+      context,
+      'Added $q × ${widget.product.name} (${v.label}) to your cart',
+      kind: ToastKind.success,
+      actionLabel: 'View cart',
+      onAction: () => openPage(context, CartPage(state: widget.state)),
+    );
+  }
+
+  Future<void> _delete() async {
+    final ok = await confirmIos(
+      context,
+      title: 'Delete ${widget.product.name}?',
+      message: 'It leaves the store and match pages for everyone. Past orders and receipts are kept.',
+      confirm: 'Delete',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    try {
+      await widget.state.api.send('DELETE', '/api/v1/store/products/${widget.product.id}');
+      if (!mounted) return;
+      showToast(context, '${widget.product.name} deleted', kind: ToastKind.success);
+      Navigator.of(context).pop(true);
+    } on ApiException catch (e) {
+      if (mounted) showToast(context, e.message, kind: ToastKind.error);
+    }
   }
 
   @override
@@ -834,9 +853,11 @@ class _ProductPageState extends State<ProductPage> {
               ),
               const SizedBox(height: 16),
               if (isStoreManager(widget.state))
-                Text('Stock on hand: ${v?.stock ?? 0}. Buyers (players and fans) purchase this item.',
-                    style: const TextStyle(color: muted, fontWeight: FontWeight.w600))
-              else
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text('Stock on hand: ${v?.stock ?? 0}',
+                      style: const TextStyle(color: muted, fontWeight: FontWeight.w600)),
+                ),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
@@ -847,6 +868,18 @@ class _ProductPageState extends State<ProductPage> {
                   label: Text(buttonText),
                 ),
               ),
+              if (isStoreManager(widget.state)) ...[
+                const SizedBox(height: 8),
+                Center(
+                  child: TextButton.icon(
+                    key: const Key('delete-product'),
+                    style: TextButton.styleFrom(foregroundColor: _red, minimumSize: const Size(48, 48)),
+                    onPressed: _delete,
+                    icon: const Icon(CupertinoIcons.trash),
+                    label: const Text('Delete product'),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -910,20 +943,23 @@ class _CartPageState extends State<CartPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SectionHeading('Order summary'),
-                  TextField(
-                    key: const Key('discount-code'),
-                    controller: promo,
-                    textCapitalization: TextCapitalization.characters,
-                    onSubmitted: (_) => _apply(),
-                    decoration: InputDecoration(
-                      labelText: 'Discount code',
-                      hintText: 'e.g. WELCOME10',
-                      suffixIcon: TextButton(
-                        onPressed: _apply,
-                        style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
-                        child: const Text('Apply'),
+                  FormSection(
+                    children: [
+                      TextRow(
+                        fieldKey: const Key('discount-code'),
+                        label: 'Discount code',
+                        hint: 'e.g. WELCOME10',
+                        controller: promo,
+                        prefixIcon: CupertinoIcons.tag,
+                        textCapitalization: TextCapitalization.characters,
+                        onFieldSubmitted: (_) => _apply(),
+                        suffix: TextButton(
+                          onPressed: _apply,
+                          style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
+                          child: const Text('Apply'),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   if (code != null)
@@ -1112,7 +1148,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final state = widget.state;
     final cart = state.cart;
     if (!state.isOnline || cart.isEmpty) return;
-    final orderId = _retryOrderId ?? 'ord-${DateTime.now().millisecondsSinceEpoch}';
+    final orderId = _retryOrderId ?? newId();
     setState(() {
       paying = true;
       error = null;
@@ -1419,7 +1455,7 @@ class _ReceiptPageState extends State<ReceiptPage> {
 }
 
 
-/// Admins and club managers run the store; everyone else shops.
+/// Admins and club managers also run the store (add products, see stock); every role can buy.
 bool isStoreManager(AppState state) => const {'super_admin', 'club_manager'}.contains(state.user?.role);
 
 /// Store management: add a product with one option (club manager / admin only).
@@ -1472,7 +1508,7 @@ class _AddProductPageState extends State<AddProductPage> {
         ],
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${_name.text.trim()} added to the store')));
+      showToast(context, '${_name.text.trim()} added to the store', kind: ToastKind.success);
       Navigator.of(context).pop(true);
     } on ApiException catch (e) {
       setState(() => _error = e.message);
@@ -1487,80 +1523,72 @@ class _AddProductPageState extends State<AddProductPage> {
   Widget build(BuildContext context) => OceanPage(
     title: 'Add merchandise',
     children: [
-      GlassCard(
-        child: Form(
-          key: _form,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (_error != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(_error!, style: const TextStyle(color: Color(0xFFB3261E))),
+      Form(
+        key: _form,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_error != null) ...[FormError(_error!), const SizedBox(height: 16)],
+            FormSection(
+              header: 'Product',
+              children: [
+                TextRow(label: 'Product name', controller: _name, validator: _required,
+                    textCapitalization: TextCapitalization.words),
+                PickerRow<String>(
+                  label: 'Category',
+                  initialValue: _category,
+                  onChanged: (v) => setState(() => _category = v),
+                  options: const [
+                    PickerOption(value: 'apparel', label: 'Apparel', icon: CupertinoIcons.tag),
+                    PickerOption(value: 'accessories', label: 'Accessories', icon: CupertinoIcons.bag),
+                    PickerOption(value: 'digital', label: 'Digital', icon: CupertinoIcons.cloud_download),
+                  ],
                 ),
-              TextFormField(
-                controller: _name,
-                decoration: const InputDecoration(labelText: 'Product name'),
-                validator: _required,
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: _category,
-                decoration: const InputDecoration(labelText: 'Category'),
-                items: const [
-                  DropdownMenuItem(value: 'apparel', child: Text('Apparel')),
-                  DropdownMenuItem(value: 'accessories', child: Text('Accessories')),
-                  DropdownMenuItem(value: 'digital', child: Text('Digital')),
-                ],
-                onChanged: (v) => setState(() => _category = v ?? 'apparel'),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _description,
-                maxLines: 2,
-                decoration: const InputDecoration(labelText: 'Description (optional)'),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _image,
-                keyboardType: TextInputType.url,
-                decoration: const InputDecoration(labelText: 'Image link (optional)', hintText: 'https://…/photo.jpg'),
-                validator: (v) {
-                  final t = (v ?? '').trim();
-                  return t.isEmpty || t.startsWith('http://') || t.startsWith('https://') ? null : 'Must start with https://';
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _variant,
-                decoration: const InputDecoration(labelText: 'Option (size / colour)'),
-                validator: _required,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _price,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'Price (PKR)', hintText: 'e.g. 4500'),
-                validator: (v) => (double.tryParse((v ?? '').trim()) ?? -1) < 0 ? 'Enter a price in PKR' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _stock,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Units in stock'),
-                validator: (v) => (int.tryParse((v ?? '').trim()) ?? -1) < 0 ? 'Enter a whole number' : null,
-              ),
-              const SizedBox(height: 20),
-              FilledButton(
-                key: const Key('save-product'),
-                style: FilledButton.styleFrom(minimumSize: const Size(48, 56)),
-                onPressed: _saving ? null : _save,
-                child: _saving
-                    ? const SizedBox.square(dimension: 22, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Add to store'),
-              ),
-            ],
-          ),
+                TextRow(label: 'Description (optional)', controller: _description, maxLines: 2),
+                TextRow(
+                  label: 'Image link (optional)',
+                  hint: 'https://…/photo.jpg',
+                  controller: _image,
+                  keyboardType: TextInputType.url,
+                  validator: (v) {
+                    final t = (v ?? '').trim();
+                    return t.isEmpty || t.startsWith('http://') || t.startsWith('https://')
+                        ? null
+                        : 'The link must start with https://';
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            FormSection(
+              header: 'Option and stock',
+              footer: 'Buyers see the price in PKR. Stock is reserved safely when many people buy at once.',
+              children: [
+                TextRow(label: 'Option (size / colour)', controller: _variant, validator: _required),
+                TextRow(
+                  label: 'Price (PKR)',
+                  hint: 'e.g. 4500',
+                  controller: _price,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  validator: (v) => (double.tryParse((v ?? '').trim()) ?? -1) < 0 ? 'Enter a price in PKR' : null,
+                ),
+                TextRow(
+                  label: 'Units in stock',
+                  controller: _stock,
+                  keyboardType: TextInputType.number,
+                  validator: (v) => (int.tryParse((v ?? '').trim()) ?? -1) < 0 ? 'Enter a whole number' : null,
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            PrimaryButton(
+              key: const Key('save-product'),
+              label: 'Add to store',
+              icon: CupertinoIcons.add,
+              busy: _saving,
+              onPressed: _save,
+            ),
+          ],
         ),
       ),
     ],

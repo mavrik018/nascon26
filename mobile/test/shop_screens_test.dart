@@ -103,7 +103,7 @@ void main() {
     expect(bodies.single['items'], [
       {'variant_id': 'var-m', 'quantity': 1},
     ]);
-    expect((bodies.single['order_id'] as String).startsWith('ord-'), isTrue);
+    expect(RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$').hasMatch(bodies.single['order_id'] as String), isTrue); // UUID v4
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     state.dispose();

@@ -38,7 +38,11 @@ class SqliteLocalStore implements LocalStore {
     final path = p.join(await getDatabasesPath(), 'league_app.db');
     final db = await openDatabase(
       path,
-      version: 1,
+      version: 2,
+      // v2: pending_actions.owner, so each signed-in account keeps its own queue.
+      onUpgrade: (db, from, _) async {
+        if (from < 2) await db.execute("ALTER TABLE pending_actions ADD COLUMN owner TEXT NOT NULL DEFAULT ''");
+      },
       onCreate: (db, _) async {
         await db.execute('CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
         await db.execute('CREATE TABLE cache (key TEXT PRIMARY KEY, json TEXT NOT NULL, saved_at TEXT NOT NULL)');
@@ -50,7 +54,8 @@ class SqliteLocalStore implements LocalStore {
           'queued_at TEXT NOT NULL, '
           'base_version INTEGER NOT NULL, '
           'payload TEXT NOT NULL, '
-          'label TEXT NOT NULL)',
+          'label TEXT NOT NULL, '
+          "owner TEXT NOT NULL DEFAULT '')",
         );
         await db.execute(
           'CREATE TABLE sync_log ('
@@ -100,6 +105,7 @@ class SqliteLocalStore implements LocalStore {
           baseVersion: r['base_version'] as int,
           payload: Map<String, dynamic>.from(jsonDecode(r['payload'] as String) as Map),
           label: r['label'] as String,
+          owner: r['owner'] as String,
         ),
     ];
   }
@@ -112,6 +118,7 @@ class SqliteLocalStore implements LocalStore {
     'base_version': a.baseVersion,
     'payload': jsonEncode(a.payload),
     'label': a.label,
+    'owner': a.owner,
   });
 
   @override

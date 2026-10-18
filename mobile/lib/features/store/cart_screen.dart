@@ -68,7 +68,7 @@ class _CartScreenState extends State<CartScreen> {
       'payment': {'token': _token},
     };
     final bodyKey = jsonEncode(content);
-    if (_orderId == null || _lastBody != bodyKey) _orderId = newId('ord');
+    if (_orderId == null || _lastBody != bodyKey) _orderId = newId();
     _lastBody = bodyKey;
     final body = {'order_id': _orderId, ...content};
     final labels = {for (final i in cart.items) i.variantId: '${i.productName} (${i.variantLabel})'};

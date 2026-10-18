@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'core/app_state.dart';
+import 'core/format.dart';
 import 'features/auth/login_screen.dart';
 import 'features/home/home_shell.dart';
 import 'features/sync/sync_screen.dart';
@@ -10,14 +11,6 @@ import 'widgets/sync_banner.dart';
 
 const _defaultSeed = Color(0xFF1E3A8A);
 
-Color? parseHexColor(String? hex) {
-  if (hex == null) return null;
-  var h = hex.trim().replaceFirst('#', '');
-  if (h.length == 3) h = h.split('').map((c) => '$c$c').join();
-  if (h.length == 6) h = 'FF$h';
-  final v = int.tryParse(h, radix: 16);
-  return (h.length == 8 && v != null) ? Color(v) : null;
-}
 
 ThemeData buildTheme(Color seed, Brightness brightness) {
   final scheme = ColorScheme.fromSeed(seedColor: seed, brightness: brightness);

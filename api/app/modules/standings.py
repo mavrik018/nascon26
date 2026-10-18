@@ -143,7 +143,7 @@ def compute(conn, league_id: str) -> dict:
     league = conn.execute("SELECT * FROM scoring_leagues WHERE league_id = %s", (league_id,)).fetchone()
     if not league:
         raise not_found("LEAGUE_NOT_FOUND", league_id=league_id)
-    sport = sports.get_sport(league["sport_id"], conn)
+    sport = league.get("sport_config") or sports.get_sport(league["sport_id"], conn)
     teams, pts = league["teams"], league["points"]
     matches, remaining = _played_matches(conn, league, sport)
 

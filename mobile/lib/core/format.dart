@@ -1,13 +1,17 @@
 import 'dart:math';
+import 'dart:ui' show Color;
 
-final Random _rand = Random();
+final Random _secure = Random.secure();
 
-/// Client-generated id: `<prefix>-<millis>-<random>`, within the spec's
-/// 1-64 chars of [A-Za-z0-9_.:-].
-String newId(String prefix) {
-  final ms = DateTime.now().millisecondsSinceEpoch;
-  final r = _rand.nextInt(0x7fffffff).toRadixString(36);
-  return '$prefix-$ms-$r';
+/// RFC 4122 version-4 UUID from a cryptographically secure source (like Postgres gen_random_uuid()).
+/// Only used for ids the phone must create before the server sees the request: idempotency keys for
+/// events, roster requests, orders and offline actions (spec 5.14). Everything else gets its id from the server.
+String newId() {
+  final b = List<int>.generate(16, (_) => _secure.nextInt(256));
+  b[6] = (b[6] & 0x0f) | 0x40; // version 4
+  b[8] = (b[8] & 0x3f) | 0x80; // RFC 4122 variant
+  final h = b.map((x) => x.toRadixString(16).padLeft(2, '0')).join();
+  return '${h.substring(0, 8)}-${h.substring(8, 12)}-${h.substring(12, 16)}-${h.substring(16, 20)}-${h.substring(20)}';
 }
 
 /// UTC timestamp in the spec format YYYY-MM-DDTHH:MM:SSZ.
@@ -79,3 +83,13 @@ String asStr(Object? v, [String fallback = '']) => v == null ? fallback : v.toSt
 Map<String, dynamic> asMap(Object? v) => v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
 
 List<dynamic> asList(Object? v) => v is List ? v : const [];
+
+/// '#1E40AF' / '1E40AF' / '#fff' -> Color, or null when it is not a hex colour (tenant branding).
+Color? parseHexColor(String? hex) {
+  if (hex == null) return null;
+  var h = hex.trim().replaceFirst('#', '');
+  if (h.length == 3) h = h.split('').map((c) => '$c$c').join();
+  if (h.length == 6) h = 'FF$h';
+  final v = int.tryParse(h, radix: 16);
+  return (h.length == 8 && v != null) ? Color(v) : null;
+}

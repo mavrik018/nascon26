@@ -123,6 +123,7 @@ void main() {
         baseVersion: 1,
         payload: {'match_id': 'm1'},
         label: 'Goal',
+        owner: 'user-org',
       ),
     );
     final state = await pumpApp(tester, backend, loggedIn: true, network: false, store: store);

@@ -23,6 +23,7 @@ store_domain_events, the internal queue (transactional outbox).
 """
 import base64
 import time
+import uuid
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.concurrency import run_in_threadpool
@@ -47,6 +48,8 @@ CREATE TABLE IF NOT EXISTS store_products (
     description TEXT NOT NULL DEFAULT ''
 );
 ALTER TABLE store_products ADD COLUMN IF NOT EXISTS image_url TEXT;
+-- Deleted products are archived: hidden from the store and checkout, kept for past orders and receipts.
+ALTER TABLE store_products ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE TABLE IF NOT EXISTS store_variants (
     variant_id  TEXT PRIMARY KEY,
     product_id  TEXT NOT NULL REFERENCES store_products(product_id) ON DELETE CASCADE,
@@ -58,6 +61,12 @@ CREATE TABLE IF NOT EXISTS store_variants (
     currency    TEXT NOT NULL DEFAULT 'PKR',
     stock       INTEGER NOT NULL CHECK (stock >= 0),
     reserved    INTEGER NOT NULL DEFAULT 0 CHECK (reserved >= 0)
+);
+CREATE TABLE IF NOT EXISTS store_price_changes (
+    variant_id   TEXT NOT NULL REFERENCES store_variants(variant_id) ON DELETE CASCADE,
+    effective_at TIMESTAMPTZ NOT NULL,
+    price_minor  BIGINT NOT NULL CHECK (price_minor >= 0),
+    PRIMARY KEY (variant_id, effective_at)
 );
 CREATE TABLE IF NOT EXISTS store_discount_codes (
     code    TEXT PRIMARY KEY,
@@ -199,11 +208,17 @@ def _fingerprint(order: dict) -> dict:
 
 # --------------------------------------------------------------------------- phase A: check, claim, reserve
 
+# FR-2.3 scheduled price changes: the latest change already in effect wins, else the base price.
+# Every price read (catalogue, checkout, match showcase) uses this one expression on alias v.
+PRICE_SQL = ("COALESCE((SELECT c.price_minor FROM store_price_changes c WHERE c.variant_id = v.variant_id"
+             " AND c.effective_at <= now() ORDER BY c.effective_at DESC LIMIT 1), v.price_minor)")
+
+
 def _load_variants(conn, order: dict, tenant_id: str | None) -> dict:
     ids = [i["variant_id"] for i in order["items"]]
     rows = conn.execute(
-        "SELECT v.variant_id, v.price_minor, p.tenant_id FROM store_variants v "
-        "JOIN store_products p USING (product_id) WHERE v.variant_id = ANY(%s)", (ids,)).fetchall()
+        f"SELECT v.variant_id, {PRICE_SQL} AS price_minor, p.tenant_id FROM store_variants v "
+        "JOIN store_products p USING (product_id) WHERE v.variant_id = ANY(%s) AND NOT p.archived", (ids,)).fetchall()
     variants = {r["variant_id"]: r for r in rows}
     for variant_id in ids:
         if variant_id not in variants:
@@ -432,10 +447,11 @@ def list_products(user: dict = Depends(current_user)):
     with pool.connection() as conn:
         products = conn.execute(
             "SELECT product_id, tenant_id, name, category, description, image_url FROM store_products "
-            "WHERE %(t)s::text IS NULL OR tenant_id = %(t)s ORDER BY product_id", {"t": tenant_id}).fetchall()
+            "WHERE NOT archived AND (%(t)s::text IS NULL OR tenant_id = %(t)s) ORDER BY product_id",
+            {"t": tenant_id}).fetchall()
         variants = conn.execute(
-            "SELECT product_id, variant_id, label, size, color, price_minor, currency, stock "
-            "FROM store_variants ORDER BY product_id, position, variant_id").fetchall()
+            f"SELECT product_id, variant_id, label, size, color, {PRICE_SQL} AS price_minor, currency, stock "
+            "FROM store_variants v ORDER BY product_id, position, variant_id").fetchall()
     by_product: dict[str, list] = {}
     for v in variants:
         by_product.setdefault(v.pop("product_id"), []).append(v)
@@ -484,8 +500,7 @@ async def create_product(request: Request, user: dict = Depends(current_user)):
             bad.append("tenant_id")
     if bad:
         raise validation(bad, "Invalid product")
-    import time
-    product_id = f"prod-{int(time.time() * 1000)}"
+    product_id = str(uuid.uuid4())
     with pool.connection() as conn:
         conn.execute("INSERT INTO store_products (product_id, tenant_id, name, category, description, image_url)"
                      " VALUES (%s, %s, %s, %s, %s, %s)",
@@ -522,6 +537,56 @@ def order_receipt(order_id: str, user: dict = Depends(current_user)):
     pdf = base64.b64decode(row["response"]["receipt"]["pdf_base64"])
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="receipt-{order_id}.pdf"'})
+
+
+@router.delete("/api/v1/store/products/{product_id}")
+def delete_product(product_id: str, user: dict = Depends(current_user)):
+    """Remove a product from the store (club manager of the tenant, or admin). It is archived, not erased:
+    past orders and receipts still resolve, it just cannot be bought or pinned any more."""
+    if user.get("role") not in MANAGER_ROLES:
+        raise forbidden("Only club managers and admins can delete merchandise")
+    with pool.connection() as conn:
+        row = conn.execute("SELECT tenant_id FROM store_products WHERE product_id = %s AND NOT archived",
+                           (product_id,)).fetchone()
+        if row is None:
+            raise not_found("PRODUCT_NOT_FOUND", product_id=product_id)
+        if _tenant_scope(user) not in (None, row["tenant_id"]):
+            raise forbidden("Product belongs to another tenant")
+        conn.execute("UPDATE store_products SET archived = TRUE WHERE product_id = %s", (product_id,))
+        conn.execute("UPDATE scoring_matches SET pinned_product_id = NULL WHERE pinned_product_id = %s", (product_id,))
+    return {"product_id": product_id, "status": "deleted"}
+
+
+@router.post("/api/v1/store/variants/{variant_id}/price-changes", status_code=201)
+async def schedule_price(variant_id: str, request: Request, user: dict = Depends(current_user)):
+    """Schedule a price for a variant from effective_at on (club manager of the tenant or admin).
+    Re-sending the same effective_at replaces that change."""
+    import datetime
+    if user.get("role") not in MANAGER_ROLES:
+        raise forbidden("Only club managers and admins can change prices")
+    body = await read_json(request)
+    if not isinstance(body, dict):
+        raise validation("body")
+    when = body.get("effective_at")
+    try:
+        when = datetime.datetime.fromisoformat(when) if isinstance(when, str) and when.endswith("Z") else None
+    except ValueError:
+        when = None
+    bad = ([] if is_int(body.get("price_minor"), 0) else ["price_minor"]) + ([] if when else ["effective_at"])
+    if bad:
+        raise validation(bad)
+    with pool.connection() as conn:
+        row = conn.execute("SELECT p.tenant_id FROM store_variants v JOIN store_products p USING (product_id)"
+                           " WHERE v.variant_id = %s", (variant_id,)).fetchone()
+        if row is None:
+            raise not_found("VARIANT_NOT_FOUND", variant_id=variant_id)
+        if _tenant_scope(user) not in (None, row["tenant_id"]):
+            raise forbidden("Variant belongs to another tenant")
+        conn.execute("INSERT INTO store_price_changes (variant_id, effective_at, price_minor) VALUES (%s, %s, %s)"
+                     " ON CONFLICT (variant_id, effective_at) DO UPDATE SET price_minor = EXCLUDED.price_minor",
+                     (variant_id, when, body["price_minor"]))
+    return {"variant_id": variant_id, "price_minor": body["price_minor"],
+            "effective_at": when.strftime("%Y-%m-%dT%H:%M:%SZ")}
 
 
 # --------------------------------------------------------------------------- order lifecycle (FR-2.3)

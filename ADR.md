@@ -68,3 +68,41 @@ Each record: context → decision → alternatives → why → trade-offs / limi
   batch is all `duplicate`. `base_version` > server → `INVALID_BASE_VERSION`; < server → `rebased_append`.
 - **Why:** offline and online paths cannot drift apart; each action sees the state left by the previous one.
 - **Trade-offs:** server-wins conflict policy only (no field-level merge); large batches are sequential.
+
+## ADR-9 Match status changes are events in the score log
+- **Decision:** postponed / abandoned / cancelled (and back to upcoming after a reschedule) are `status_change`
+  events appended to `scoring_events`; `scoring.STATUS_TRANSITIONS` rejects illegal moves with 409. Only
+  `schedule.reschedule` may append `status: upcoming`, after its conflict check passed.
+- **Alternatives:** a mutable `status` column on `scoring_matches`.
+- **Why:** one source of truth with the score; the change is replayable and audited, and the SSE stream already
+  pushes every change of the match view, so the broadcast came for free.
+- **Trade-offs:** reading a status means replaying the match's events (cheap at league size).
+
+## ADR-10 Competitions are compositions of ordinary leagues, derived on read
+- **Decision:** a division or group is a normal league (circle-method round robin). Promotion / relegation and the
+  hybrid knockout seeding are computed from live standings on every `GET`, marked `provisional` until all
+  stage matches are final.
+- **Why:** scoring, standings, rescheduling and SSE work on divisions unchanged, and a postponed or corrected
+  group match re-evaluates the downstream bracket automatically.
+- **Trade-offs:** knockout match results are not stored yet; slot and rest rules (3 h, 24 h) are constants.
+
+## ADR-11 Sport rules are snapshotted per league and match
+- **Decision:** `scoring_leagues.sport_config` and `scoring_matches.sport_config` store the sport's rules when the league
+  or match is created; projections and standings read that copy (`scoring.match_sport`). `PUT /api/v1/sports/{id}`
+  edits the live sport, which only new leagues and matches pick up.
+- **Why:** scores are rebuilt from events on every read (ADR-3), so without a snapshot changing "goal = 1" to
+  "goal = 2" would silently rewrite every finished result and standings table.
+- **Trade-offs:** an organizer who wants a running league on new rules creates a new season / league.
+
+## ADR-12 Ids: server-assigned UUIDs, client UUID v4 only for idempotency keys
+- **Decision:** products, players and sports get `uuid4` ids from the server; the app never invents them. The phone
+  still creates `event_id`, `request_id`, `order_id` and offline `action_id` (spec 5.9 / 5.11 / 5.12 / 5.14), now as
+  RFC 4122 v4 UUIDs from `Random.secure()` instead of timestamps.
+- **Why:** an idempotency key must exist before the request reaches the server (offline queue, retries), so it cannot
+  be server-assigned; a cryptographically random UUID cannot collide or be guessed.
+
+## ADR-13 One offline queue per account on a shared phone
+- **Decision:** every queued action and sync result stores the `user_id` that created it; the app shows and syncs only
+  the signed-in account's actions, with that account's token. Others wait untouched until their owner signs in.
+- **Why:** before, a viewer signing in after a manager saw the manager's queue and synced it with the viewer's token,
+  so the server rightly rejected (and the app dropped) the manager's work.

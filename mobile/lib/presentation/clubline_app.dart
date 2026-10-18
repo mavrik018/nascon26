@@ -1,17 +1,18 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../core/app_state.dart';
-import '../widgets/sync_banner.dart';
+import '../core/format.dart';
 import 'club_screens.dart';
 import 'league_screens.dart';
 import 'ocean_widgets.dart';
+import 'onboarding_screens.dart';
 import 'profile_screens.dart';
 import 'shop_screens.dart';
 
-/// App root: session gate (sign-in vs tabs), global snackbars, and the
-/// always-visible Online / Offline / Syncing / pending indicator.
+/// App root: session gate (onboarding -> sign-in -> tabs), global snackbars and the tenant-branded theme.
 class ClublineApp extends StatefulWidget {
   const ClublineApp({super.key, required this.state});
   final AppState state;
@@ -30,9 +31,8 @@ class _ClublineAppState extends State<ClublineApp> {
   void initState() {
     super.initState();
     _messages = widget.state.messages.listen((m) {
-      _messengerKey.currentState
-        ?..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(m)));
+      final messenger = _messengerKey.currentState;
+      if (messenger != null) toastOn(messenger, m, kind: m.contains('rejected') ? ToastKind.error : ToastKind.success);
     });
     widget.state.addListener(_onState);
   }
@@ -62,11 +62,13 @@ class _ClublineAppState extends State<ClublineApp> {
         return MaterialApp(
           title: state.tenant?.name ?? 'Clubline',
           debugShowCheckedModeBanner: false,
-          theme: oceanTheme(),
+          theme: oceanTheme(primary: parseHexColor(state.tenant?.primaryColor) ?? ocean),
           navigatorKey: _navigatorKey,
           scaffoldMessengerKey: _messengerKey,
           home: !state.ready
               ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+              : !state.onboardingSeen && state.session == null
+              ? OnboardingPage(state: state)
               : state.session == null
               ? SignInPage(state: state)
               : ClublineShell(key: ValueKey(state.user?.userId), state: state),
@@ -84,8 +86,23 @@ class ClublineShell extends StatefulWidget {
   State<ClublineShell> createState() => _ClublineShellState();
 }
 
-class _ClublineShellState extends State<ClublineShell> {
+class _ClublineShellState extends State<ClublineShell> with SingleTickerProviderStateMixin {
   int index = 0;
+  // Tab switch: the new tab fades and lifts in (state of every tab is kept by the IndexedStack).
+  late final AnimationController _tab = AnimationController(vsync: this, duration: Motion.enter, value: 1);
+
+  void _select(int value) {
+    if (value == index) return;
+    HapticFeedback.selectionClick();
+    setState(() => index = value);
+    if (!Motion.reduced(context)) _tab.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _tab.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -95,37 +112,30 @@ class _ClublineShellState extends State<ClublineShell> {
       builder: (context, _) => PopScope(
         canPop: index == 0,
         onPopInvokedWithResult: (didPop, _) {
-          if (!didPop) setState(() => index = 0);
+          if (!didPop) _select(0);
         },
         child: OceanBackground(
           child: Scaffold(
-            body: Stack(
-              children: [
-                IndexedStack(
-                  index: index,
-                  children: [
-                    FixturesPage(state: state),
-                    StandingsPage(state: state),
-                    ClubPage(state: state),
-                    ShopPage(state: state),
-                    ProfilePage(state: state),
-                  ],
-                ),
-                // Spec 8.2: always-visible online / offline / syncing + pending indicator.
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 10,
-                  child: Center(
-                    child: SyncPill(
-                      state: state,
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(builder: (_) => SyncPage(state: state)),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            // Spec 8.2 status indicator: every page header (OceanPage) shows SyncDot.
+            body: AnimatedBuilder(
+              animation: _tab,
+              builder: (context, child) {
+                final t = Motion.curve.transform(_tab.value);
+                return Opacity(
+                  opacity: .35 + .65 * t,
+                  child: Transform.translate(offset: Offset(0, 10 * (1 - t)), child: child),
+                );
+              },
+              child: IndexedStack(
+                index: index,
+                children: [
+                  FixturesPage(state: state),
+                  StandingsPage(state: state),
+                  ClubPage(state: state),
+                  ShopPage(state: state),
+                  ProfilePage(state: state),
+                ],
+              ),
             ),
             bottomNavigationBar: Container(
               decoration: BoxDecoration(
@@ -138,7 +148,7 @@ class _ClublineShellState extends State<ClublineShell> {
                 elevation: 0,
                 indicatorColor: ocean.withValues(alpha: .12),
                 selectedIndex: index,
-                onDestinationSelected: (value) => setState(() => index = value),
+                onDestinationSelected: _select,
                 labelTextStyle: WidgetStateProperty.resolveWith(
                   (states) => TextStyle(
                     fontFamily: 'Inter',

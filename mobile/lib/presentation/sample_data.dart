@@ -197,10 +197,9 @@ class PreviewState extends ChangeNotifier {
   bool get canManage => role == 'Club manager' || role == 'Platform admin';
   bool get canScore => role == 'League organizer' || role == 'Platform admin';
   void add(ShopProduct product, String size, int quantity) {
-    if (!product.sizes.contains(size) ||
-        product.stock(size) == 0 ||
-        quantity < 1)
+    if (!product.sizes.contains(size) || product.stock(size) == 0 || quantity < 1) {
       return;
+    }
     final existing = cart
         .where((line) => line.product.id == product.id && line.size == size)
         .firstOrNull;

@@ -10,9 +10,9 @@ import 'fake_backend.dart';
 
 /// The integrated app: session gate + five tabs backed by the (fake) API.
 void main() {
-  Future<AppState> boot(WidgetTester tester, {bool loggedIn = true}) async {
+  Future<AppState> boot(WidgetTester tester, {bool loggedIn = true, Size size = const Size(360, 640)}) async {
     tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(360, 640);
+    tester.view.physicalSize = size;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final tokens = MemoryTokenStore();
@@ -34,9 +34,34 @@ void main() {
     return state;
   }
 
-  testWidgets('signed out -> sign-in page, no tabs', (tester) async {
+  testWidgets('signed out -> onboarding on new download, then sign-in page, no tabs', (tester) async {
     final state = await boot(tester, loggedIn: false);
     expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byKey(const Key('onboarding-page')), findsOneWidget);
+    expect(find.text('Start Your Dream Journey!'), findsOneWidget);
+
+    // Step through the 4 onboarding screens
+    await tester.tap(find.byKey(const Key('onboarding-next')));
+    await tester.pumpAndSettle();
+    expect(find.text('Tactical Lineups & Squads'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('onboarding-next')));
+    await tester.pumpAndSettle();
+    expect(find.text('Live Analytics & Offline Sync'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('onboarding-next')));
+    await tester.pumpAndSettle();
+    expect(find.text('Official Club Store & Merch'), findsOneWidget);
+
+    // Finish onboarding -> persists in store and opens SignInPage
+    await tester.tap(find.byKey(const Key('onboarding-start')));
+    await tester.pumpAndSettle();
+    expect(state.onboardingSeen, isTrue);
+    expect(await state.store.getSetting('onboarding_seen'), 'true');
+    expect(find.byKey(const Key('onboarding-page')), findsNothing);
+    expect(find.text('Welcome back'), findsOneWidget);
+    expect(find.byKey(const Key('login-sports-hero')), findsOneWidget);
+
     await tester.pumpWidget(const SizedBox());
     state.dispose();
   });
@@ -47,8 +72,43 @@ void main() {
     for (final tab in ['Fixtures', 'Standings', 'Club', 'Store', 'Profile']) {
       expect(find.descendant(of: find.byType(NavigationBar), matching: find.text(tab)), findsOneWidget);
     }
-    expect(find.textContaining('Offline'), findsNothing); // status pill stays hidden while online
+    // Spec 8.2: the connection state is always visible in the page header, even when all is well.
+    expect(find.byKey(const Key('sync-dot')), findsOneWidget);
+    expect(find.text('Online'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     state.dispose();
   });
+
+  testWidgets('tenant brand colour drives the theme', (tester) async {
+    final state = await boot(tester);
+    final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    expect(app.theme!.colorScheme.primary, const Color(0xFF1E40AF));
+    await tester.pumpWidget(const SizedBox());
+    state.dispose();
+  });
+
+  testWidgets('club manager sees both Add merchandise and the cart', (tester) async {
+    final state = await boot(tester);
+    await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Store')));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byTooltip('Add merchandise'), findsOneWidget);
+    expect(find.byTooltip('Shopping cart, empty'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    state.dispose();
+  });
+
+  for (final size in const [Size(360, 640), Size(640, 360)]) {
+    testWidgets('every tab renders without overflow at ${size.width.toInt()}x${size.height.toInt()}',
+        (tester) async {
+      final state = await boot(tester, size: size);
+      for (final tab in ['Fixtures', 'Standings', 'Club', 'Store', 'Profile']) {
+        await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(tab)));
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(tester.takeException(), isNull, reason: '$tab at $size');
+        expect(find.byKey(const Key('sync-dot')), findsWidgets, reason: tab);
+      }
+      await tester.pumpWidget(const SizedBox());
+      state.dispose();
+    });
+  }
 }

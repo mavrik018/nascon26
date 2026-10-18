@@ -1,5 +1,7 @@
 """Production /api/v1 routes the mobile app uses for leagues, matches, scoring and sync,
 plus offline-sync roster actions and event-payload validation branches."""
+import uuid
+
 import pytest
 
 
@@ -157,6 +159,7 @@ def test_sports_list_and_role_based_create(api):
     assert api.post("/api/v1/sports", json=body, headers=login(api, "player")).status_code == 403
     r = api.post("/api/v1/sports", json=body, headers=login(api, "organizer"))
     assert r.status_code == 201 and r.json()["config"]["tie_break_order"][-1] == "draw_lots"
-    assert api.post("/api/v1/sports", json=body, headers=login(api, "admin")).status_code == 409
-    assert api.post("/api/v1/sports", json={**body, "sport_id": "Bad Id"},
-                    headers=login(api, "admin")).status_code == 400
+    assert uuid.UUID(r.json()["sport_id"]) and r.json()["sport_id"] != "netball"  # the server assigns ids
+    dup = api.post("/api/v1/sports", json={**body, "name": "NETBALL"}, headers=login(api, "admin"))
+    assert dup.status_code == 409 and dup.json()["error"]["code"] == "SPORT_EXISTS"
+    assert api.post("/api/v1/sports", json={**body, "name": ""}, headers=login(api, "admin")).status_code == 400

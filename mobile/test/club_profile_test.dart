@@ -190,6 +190,35 @@ void main() {
     await finish(tester, s);
   });
 
+  testWidgets('manager adds a new player to the squad', (tester) async {
+    await phone(tester);
+    Map<String, dynamic>? sent;
+    final backend = FakeBackend()
+      ..overrides['/api/v1/roster/players'] = (r) {
+        sent = jsonDecode(r.body) as Map<String, dynamic>;
+        return FakeBackend.json({'player_id': 'player-new', 'name': sent!['name']}, 201);
+      };
+    final s = await _state(backend, MemoryLocalStore());
+    await tester.pumpWidget(MaterialApp(
+      home: ManageRosterPage(
+        state: s,
+        roster: [for (final p in _club['roster']! as List) Map<String, dynamic>.from(p as Map)],
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('add-player')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextFormField, 'Full name'), 'Ali Raza');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Position'), 'MF');
+    await reveal(tester, find.byKey(const Key('save-player')));
+    await tester.tap(find.byKey(const Key('save-player')));
+    await tester.pumpAndSettle();
+    expect(sent, containsPair('squad_id', 'club-alpha-1'));
+    expect(sent, containsPair('position', 'mf'));
+    expect(find.byKey(const Key('add-player')), findsOneWidget); // back on the roster page
+    await finish(tester, s);
+  });
+
   testWidgets('viewer sees an explanation instead of the roster form', (tester) async {
     await phone(tester);
     final s = await _state(FakeBackend(), MemoryLocalStore(), role: 'viewer');

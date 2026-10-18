@@ -1,8 +1,6 @@
-import 'package:flutter/cupertino.dart'
-    show CupertinoAlertDialog, CupertinoDialogAction, showCupertinoDialog;
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import '../toolkit/02_ui_elements/app_chip.dart';
 import '../toolkit/02_ui_elements/search_field.dart';
 
 import '../core/api_client.dart';
@@ -11,6 +9,7 @@ import '../core/errors.dart';
 import '../core/format.dart';
 import '../core/models.dart';
 import 'ocean_widgets.dart';
+import 'onboarding_screens.dart' show MatchTelemetryCard, TacticalLineupCard;
 
 const _loanColor = Color(0xFF9B6318);
 const _danger = Color(0xFFB3261E);
@@ -38,6 +37,7 @@ String _actionLabel(String raw) => switch (raw) {
   'loan' => 'Loan',
   'release' => 'Release',
   'loan_return' => 'Loan return',
+  'add' => 'Added',
   'register' || 'registration' => 'Registered',
   _ => humanize(raw),
 };
@@ -252,7 +252,7 @@ class _ClubPageState extends State<ClubPage> {
         if (loaded!.fromCache) _SavedNote(loaded!.savedAt),
         _header(name, data),
         ChoiceRow(
-          items: const ['Roster', 'Overview', 'Stats'],
+          items: const ['Roster', 'Lineup', 'Overview', 'Stats'],
           value: tab,
           light: true,
           onChanged: (v) => setState(() => tab = v),
@@ -291,12 +291,44 @@ class _ClubPageState extends State<ClubPage> {
               icon: const Icon(Icons.manage_accounts_outlined),
               label: const Text('Manage roster'),
             ),
-        ] else if (tab == 'Overview')
+        ] else if (tab == 'Lineup')
+          const TacticalLineupCard()
+        else if (tab == 'Overview')
           ..._overview(data)
-        else
+        else ...[
           _stats(data),
+          const TacticalLineupCard(),
+          const MatchTelemetryCard(),
+        ],
+        if (widget.state.user?.role == 'super_admin')
+          TextButton.icon(
+            key: const Key('delete-club'),
+            style: TextButton.styleFrom(foregroundColor: Colors.white, minimumSize: const Size(48, 48)),
+            onPressed: () => _deleteClub(name),
+            icon: const Icon(CupertinoIcons.trash),
+            label: const Text('Delete club'),
+          ),
       ],
     );
+  }
+
+  Future<void> _deleteClub(String name) async {
+    final ok = await confirmIos(
+      context,
+      title: 'Delete $name?',
+      message: 'Only a club with no fixtures and no registered players can be deleted. This cannot be undone.',
+      confirm: 'Delete',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    try {
+      await widget.state.api.send('DELETE', '/api/v1/clubs/$clubId');
+      if (!mounted) return;
+      notice(context, '$name deleted', kind: ToastKind.success);
+      if (Navigator.canPop(context)) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) notice(context, plainError(e), kind: ToastKind.error);
+    }
   }
 
   Widget _header(String name, Map<String, dynamic> data) {
@@ -309,12 +341,25 @@ class _ClubPageState extends State<ClubPage> {
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withValues(alpha: .4)),
+        border: Border.all(color: Colors.white.withValues(alpha: .55), width: 1.4),
         gradient: const LinearGradient(
           colors: [Color(0xFF074569), Color(0xFF149FBE)],
           begin: Alignment.bottomLeft,
           end: Alignment.topRight,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF041524).withValues(alpha: .28),
+            blurRadius: 28,
+            spreadRadius: 1,
+            offset: const Offset(0, 14),
+          ),
+          BoxShadow(
+            color: ocean.withValues(alpha: .20),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -805,11 +850,11 @@ class _ManageRosterPageState extends State<ManageRosterPage> {
     result = _Result.none;
   });
 
-  Future<DateTime?> _pick(DateTime initial, DateTime first) => showDatePicker(
-    context: context,
-    initialDate: initial.isBefore(first) ? first : initial,
-    firstDate: first,
-    lastDate: DateTime.now().add(const Duration(days: 730)),
+  Future<DateTime?> _pick(DateTime initial, DateTime first) => showIosDatePicker(
+    context,
+    initial: initial,
+    first: first,
+    last: DateTime.now().add(const Duration(days: 730)),
   );
 
   String? _validate() {
@@ -824,6 +869,7 @@ class _ManageRosterPageState extends State<ManageRosterPage> {
       }
     }
     if (reason.text.trim().isEmpty) return 'Add a short reason for the record.';
+    if (reason.text.trim().length > 200) return 'Keep the reason under 200 characters.';
     return null;
   }
 
@@ -875,7 +921,7 @@ class _ManageRosterPageState extends State<ManageRosterPage> {
       result = _Result.none;
     });
     final body = <String, dynamic>{
-      'request_id': 'rq-${DateTime.now().millisecondsSinceEpoch}',
+      'request_id': newId(),
       'league_id': widget.state.rosterLeagueId,
       'player_id': playerId,
       'type': action,
@@ -908,7 +954,7 @@ class _ManageRosterPageState extends State<ManageRosterPage> {
       if (outcome.queued) {
         notice(context, 'Saved offline – will sync');
       } else {
-        notice(context, 'Roster updated');
+        notice(context, 'Roster updated', kind: ToastKind.success);
         _loadRoster();
       }
     } catch (e) {
@@ -980,6 +1026,23 @@ class _ManageRosterPageState extends State<ManageRosterPage> {
               ],
             ),
           ),
+        GlassCard(
+          padding: const EdgeInsets.all(16),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              key: const Key('add-player'),
+              onPressed: () async {
+                final added = await Navigator.of(context).push<bool>(MaterialPageRoute(
+                  builder: (_) => AddPlayerPage(state: widget.state, clubId: clubId),
+                ));
+                if (added == true) _loadRoster();
+              },
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text('Add a new player'),
+            ),
+          ),
+        ),
         if (loadingRoster && roster.isEmpty) const _Busy('Loading players…'),
         if (loadError != null && roster.isEmpty)
           _ErrorCard(loadError!, onRetry: _loadRoster),
@@ -995,150 +1058,98 @@ class _ManageRosterPageState extends State<ManageRosterPage> {
     );
   }
 
-  Widget _form() => GlassCard(
-    child: Column(
+  Widget _form() {
+    String playerLabel(Map<String, dynamic> p) => [
+      asStr(p['name'], asStr(p['player_id'])),
+      humanize(asStr(p['position'])),
+    ].where((x) => x.isNotEmpty).join(' · ');
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionHeading('Roster action'),
-        Wrap(
-          spacing: 8,
-          runSpacing: 4,
+        FormSection(
+          header: 'Roster action',
           children: [
-            for (final item in const ['transfer', 'loan', 'release'])
-              ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 48),
-                child: Center(
-                  widthFactor: 1,
-                  child: AppChip(
-                    label: _actionLabel(item),
-                    selected: action == item,
-                    onTap: () => _changed(() => action = item),
-                  ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: SizedBox(
+                width: double.infinity,
+                child: CupertinoSlidingSegmentedControl<String>(
+                  groupValue: action,
+                  children: {
+                    for (final item in const ['transfer', 'loan', 'release'])
+                      item: Padding(padding: const EdgeInsets.all(10), child: Text(_actionLabel(item))),
+                  },
+                  onValueChanged: (v) => _changed(() => action = v ?? 'transfer'),
                 ),
               ),
+            ),
           ],
         ),
-        const SizedBox(height: 16),
-        DropdownButtonFormField<String>(
-          key: ValueKey('player-$playerId-${roster.length}'),
-          isExpanded: true,
-          initialValue: playerId,
-          decoration: const InputDecoration(labelText: 'Player'),
-          items: [
-            for (final p in roster)
-              DropdownMenuItem(
-                value: asStr(p['player_id']),
-                child: Text(
-                  [
-                    asStr(p['name'], asStr(p['player_id'])),
-                    humanize(asStr(p['position'])),
-                  ].where((s) => s.isNotEmpty).join(' · '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+        const SizedBox(height: 20),
+        FormSection(
+          header: 'Details',
+          footer: 'Currently in ${widget.state.teamName(fromSquad)}'
+              '${asStr(player['registration_type']) == 'loan' ? ' (on loan)' : ''}. '
+              'The server checks the transfer window, squad size and positions.',
+          children: [
+            PickerRow<String>(
+              key: ValueKey('player-$playerId-${roster.length}'),
+              label: 'Player',
+              sheetTitle: 'Choose a player',
+              initialValue: playerId ?? '',
+              options: [
+                for (final p in roster)
+                  PickerOption(value: asStr(p['player_id']), label: playerLabel(p), icon: CupertinoIcons.person),
+              ],
+              onChanged: (v) => _changed(() => playerId = v),
+            ),
+            if (action != 'release')
+              PickerRow<String>(
+                key: ValueKey('squad-$toSquad-$fromSquad'),
+                label: 'Destination',
+                sheetTitle: 'Move to which squad?',
+                initialValue: toSquad ?? '',
+                options: [
+                  for (final sq in squads)
+                    PickerOption(value: sq, label: widget.state.teamName(sq), icon: CupertinoIcons.shield),
+                ],
+                onChanged: (v) => _changed(() => toSquad = v),
               ),
+            ValueRow(
+              label: 'Effective from',
+              value: isoDate(effective),
+              icon: CupertinoIcons.calendar,
+              onTap: () async {
+                final d = await _pick(effective, DateTime.now().subtract(const Duration(days: 365)));
+                if (d != null && mounted) _changed(() => effective = d);
+              },
+            ),
+            if (action == 'loan')
+              ValueRow(
+                label: 'Loan ends',
+                value: loanEnd == null ? 'Choose' : isoDate(loanEnd!),
+                icon: CupertinoIcons.calendar_badge_plus,
+                onTap: () async {
+                  final d = await _pick(
+                    loanEnd ?? effective.add(const Duration(days: 30)),
+                    effective.add(const Duration(days: 1)),
+                  );
+                  if (d != null && mounted) _changed(() => loanEnd = d);
+                },
+              ),
+            TextRow(label: 'Reason', hint: 'e.g. Needs more match time', controller: reason, maxLines: 3),
           ],
-          onChanged: (v) => _changed(() => playerId = v),
         ),
-        const SizedBox(height: 8),
-        Text(
-          'Currently in ${widget.state.teamName(fromSquad)}'
-          '${asStr(player['registration_type']) == 'loan' ? ' (on loan)' : ''}',
-          style: const TextStyle(fontFamily: 'Inter', fontSize: 11, color: muted),
-        ),
-        const SizedBox(height: 16),
-        if (action != 'release') ...[
-          DropdownButtonFormField<String>(
-            key: ValueKey('squad-$toSquad-$fromSquad'),
-            isExpanded: true,
-            initialValue: toSquad,
-            decoration: const InputDecoration(labelText: 'Destination squad'),
-            items: [
-              for (final s in squads)
-                DropdownMenuItem(
-                  value: s,
-                  child: Text(
-                    widget.state.teamName(s),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-            ],
-            onChanged: (v) => _changed(() => toSquad = v),
-          ),
-          const SizedBox(height: 16),
-        ],
-        OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-          onPressed: () async {
-            final d = await _pick(
-              effective,
-              DateTime.now().subtract(const Duration(days: 365)),
-            );
-            if (d != null && mounted) _changed(() => effective = d);
-          },
-          icon: const Icon(Icons.event),
-          label: Text('Effective from · ${isoDate(effective)}'),
-        ),
-        if (action == 'loan') ...[
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
-            ),
-            onPressed: () async {
-              final first = effective.add(const Duration(days: 1));
-              final d = await _pick(
-                loanEnd ?? effective.add(const Duration(days: 30)),
-                first,
-              );
-              if (d != null && mounted) _changed(() => loanEnd = d);
-            },
-            icon: const Icon(Icons.date_range),
-            label: Text(
-              loanEnd == null
-                  ? 'Choose loan end date'
-                  : 'Loan ends · ${isoDate(loanEnd!)}',
-            ),
-          ),
-        ],
-        const SizedBox(height: 16),
-        TextField(
-          controller: reason,
-          maxLength: 200,
-          minLines: 1,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            labelText: 'Reason',
-            hintText: 'e.g. Needs more match time',
-          ),
-          onChanged: (_) {
-            if (result == _Result.rejected) {
-              setState(() => result = _Result.none);
-            }
-          },
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'The server checks the transfer window, squad size and positions when this is sent.',
-          style: TextStyle(fontFamily: 'Inter', fontSize: 11, color: muted),
-        ),
-        const SizedBox(height: 16),
-        FilledButton.icon(
-          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-          onPressed: sending ? null : _submit,
-          icon: sending
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.send_outlined),
-          label: Text(sending ? 'Sending…' : 'Review and submit'),
+        const SizedBox(height: 20),
+        PrimaryButton(
+          label: sending ? 'Sending…' : 'Review and submit',
+          icon: CupertinoIcons.paperplane,
+          busy: sending,
+          onPressed: _submit,
         ),
       ],
-    ),
-  );
+    );
+  }
 
   Widget _resultCard() {
     final (label, color, icon) = switch (result) {
@@ -1186,5 +1197,127 @@ class _ManageRosterPageState extends State<ManageRosterPage> {
           ),
       ],
     ),
+  );
+}
+
+
+/// FR-2.2 / spec 8.2 "add": register a brand-new player in this club's squad (online only).
+class AddPlayerPage extends StatefulWidget {
+  const AddPlayerPage({super.key, required this.state, required this.clubId});
+  final AppState state;
+  final String clubId;
+
+  @override
+  State<AddPlayerPage> createState() => _AddPlayerPageState();
+}
+
+class _AddPlayerPageState extends State<AddPlayerPage> {
+  final _form = GlobalKey<FormState>();
+  final _name = TextEditingController();
+  final _position = TextEditingController();
+  final _reason = TextEditingController();
+  String _role = 'substitute';
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    for (final c in [_name, _position, _reason]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_form.currentState!.validate()) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.state.api.post('/api/v1/roster/players', {
+        'league_id': widget.state.rosterLeagueId,
+        'squad_id': widget.clubId,
+        'name': _name.text.trim(),
+        'position': _position.text.trim().toLowerCase(),
+        'role': _role,
+        'reason': _reason.text.trim().isEmpty ? null : _reason.text.trim(),
+      });
+      if (!mounted) return;
+      notice(context, '${_name.text.trim()} added to ${widget.state.teamName(widget.clubId)}',
+          kind: ToastKind.success);
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) setState(() => _error = plainError(e));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  String? _required(String? v) => (v == null || v.trim().isEmpty) ? 'Required' : null;
+
+  @override
+  Widget build(BuildContext context) => OceanPage(
+    title: 'Add player',
+    subtitle: widget.state.teamName(widget.clubId).toUpperCase(),
+    children: [
+      Form(
+        key: _form,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (!widget.state.isOnline) ...[
+              const FormError('Adding a player needs a connection. Try again when you are back online.'),
+              const SizedBox(height: 16),
+            ],
+            if (_error != null) ...[FormError(_error!), const SizedBox(height: 16)],
+            FormSection(
+              header: 'Player',
+              children: [
+                TextRow(
+                  fieldKey: const Key('player-name'),
+                  label: 'Full name',
+                  controller: _name,
+                  textCapitalization: TextCapitalization.words,
+                  validator: _required,
+                ),
+                TextRow(
+                  fieldKey: const Key('player-position'),
+                  label: 'Position',
+                  hint: 'e.g. gk, df, mf, fw',
+                  controller: _position,
+                  validator: _required,
+                ),
+                PickerRow<String>(
+                  label: 'Squad role',
+                  initialValue: _role,
+                  onChanged: (v) => setState(() => _role = v),
+                  options: const [
+                    PickerOption(value: 'captain', label: 'Captain', icon: CupertinoIcons.star_fill),
+                    PickerOption(value: 'vice_captain', label: 'Vice-captain', icon: CupertinoIcons.star_lefthalf_fill),
+                    PickerOption(value: 'starter', label: 'Starter', icon: CupertinoIcons.sportscourt),
+                    PickerOption(value: 'substitute', label: 'Substitute', icon: CupertinoIcons.arrow_2_squarepath),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            FormSection(
+              header: 'History',
+              footer: 'Kept in the player\'s permanent roster history.',
+              children: [TextRow(label: 'Reason (optional)', controller: _reason, maxLines: 2)],
+            ),
+            const SizedBox(height: 24),
+            PrimaryButton(
+              key: const Key('save-player'),
+              label: 'Add to squad',
+              icon: CupertinoIcons.person_add,
+              busy: _saving,
+              onPressed: widget.state.isOnline ? _save : null,
+            ),
+          ],
+        ),
+      ),
+    ],
   );
 }

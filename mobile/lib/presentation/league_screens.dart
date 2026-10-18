@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../toolkit/02_ui_elements/pressable.dart';
@@ -9,6 +10,9 @@ import '../core/app_state.dart';
 import '../core/format.dart';
 import '../core/models.dart';
 import 'ocean_widgets.dart';
+import 'onboarding_screens.dart' show MatchTelemetryCard, TacticalLineupCard;
+import 'club_screens.dart' show ClubPage;
+import 'shop_screens.dart' show ProductPage, parseProducts;
 
 const _live = Color(0xFFBE3450);
 const _away = Color(0xFFA86C2E);
@@ -31,6 +35,9 @@ const _red = Color(0xFFB3261E);
 String _statusLabel(String status) => switch (status) {
   'in_progress' => 'Live',
   'completed' => 'Results',
+  'postponed' => 'Postponed',
+  'abandoned' => 'Abandoned',
+  'cancelled' => 'Cancelled',
   _ => 'Upcoming',
 };
 
@@ -333,6 +340,7 @@ class _FixturesPageState extends State<FixturesPage> {
     final (_, away) = _team(state, f['away'] ?? f['away_team_id']);
     final matchId = asStr(f['match_id']);
     return _LiveMatchCard(
+      key: ValueKey('match-$matchId'), // a filtered list never hands one match's card to another
       home: home,
       away: away,
       status: asStr(f['status'], 'upcoming'),
@@ -349,6 +357,7 @@ class _FixturesPageState extends State<FixturesPage> {
 /// Laptop 2's match card, fed with live values.
 class _LiveMatchCard extends StatelessWidget {
   const _LiveMatchCard({
+    super.key,
     required this.home,
     required this.away,
     required this.status,
@@ -364,14 +373,14 @@ class _LiveMatchCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final upcoming = status == 'upcoming';
+    final upcoming = const {'upcoming', 'postponed', 'cancelled'}.contains(status);
     final live = status == 'in_progress';
     final label = _statusLabel(status);
     final scoreText = upcoming ? _clock(scheduledAt) : '$homeScore – $awayScore';
     return Pressable(
       onTap: onTap,
       semanticLabel:
-          '$home versus $away, ${upcoming ? 'upcoming at $scoreText' : '${live ? 'live' : 'final'}, $homeScore to $awayScore'}'
+          '$home versus $away, ${upcoming ? '${label.toLowerCase()} at $scoreText' : '${live ? 'live' : status == 'completed' ? 'final' : label.toLowerCase()}, $homeScore to $awayScore'}'
           '${pending > 0 ? ', $pending pending sync' : ''}. Open match.',
       child: GlassCard(
         child: Column(
@@ -410,19 +419,45 @@ class _LiveMatchCard extends StatelessWidget {
                       vertical: 12,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: .8),
+                      color: Colors.white.withValues(alpha: .94),
                       borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: Colors.white, width: 1.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF041524).withValues(alpha: .14),
+                          blurRadius: 16,
+                          offset: const Offset(0, 7),
+                        ),
+                        BoxShadow(
+                          color: ocean.withValues(alpha: .10),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
                     child: Column(
                       children: [
                         FittedBox(
-                          child: Text(
-                            scoreText,
-                            style: const TextStyle(
-                              fontFamily: 'Inter',
-                              fontSize: 30,
-                              fontWeight: FontWeight.w800,
-                              color: ink,
+                          // A new score pops in (scale + fade) so a goal is noticed at a glance.
+                          child: AnimatedSwitcher(
+                            duration: Motion.enter,
+                            reverseDuration: Motion.exit,
+                            transitionBuilder: (child, a) => FadeTransition(
+                              opacity: a,
+                              child: ScaleTransition(
+                                scale: Tween(begin: .8, end: 1.0).animate(CurvedAnimation(parent: a, curve: Curves.easeOutBack)),
+                                child: child,
+                              ),
+                            ),
+                            child: Text(
+                              scoreText,
+                              key: ValueKey(scoreText),
+                              style: const TextStyle(
+                                fontFamily: 'Inter',
+                                fontSize: 30,
+                                fontWeight: FontWeight.w800,
+                                color: ink,
+                              ),
                             ),
                           ),
                         ),
@@ -513,6 +548,7 @@ class _MatchPageState extends State<MatchPage> {
   bool busy = false;
   String tab = 'Timeline';
   Timer? _poll;
+  StreamSubscription<dynamic>? _live;
 
   AppState get state => widget.state;
   String get _path => '/api/v1/matches/${widget.matchId}';
@@ -526,17 +562,56 @@ class _MatchPageState extends State<MatchPage> {
   void initState() {
     super.initState();
     _refresh();
-    // Live score: poll every 5 s while this page is open.
+    _listen();
+    // Fallback when the live stream is down: poll every 5 s and try to reconnect.
     _poll = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (!mounted) return;
-      if (state.hasNetwork && asStr(data['status']) != 'completed') _refresh();
+      if (!mounted || _live != null) return;
+      if (state.hasNetwork && asStr(data['status']) != 'completed') {
+        _refresh();
+        _listen();
+      }
     });
+  }
+
+  /// Live score over SSE (GET /api/v1/matches/{id}/stream): the server pushes the whole match view
+  /// whenever a score, status, correction or pinned product changes.
+  void _listen() {
+    if (_live != null || !state.isOnline) return;
+    _live = state.api.events('$_path/stream').listen(
+      (body) {
+        if (mounted && body is Map) {
+          setState(() {
+            loaded = Loaded(body, savedAt: DateTime.now());
+            error = null;
+          });
+        }
+      },
+      onError: (_) => _live = null,
+      onDone: () => _live = null,
+      cancelOnError: true,
+    );
   }
 
   @override
   void dispose() {
     _poll?.cancel();
+    _live?.cancel();
     super.dispose();
+  }
+
+  Future<void> _openPinned(String productId) async {
+    try {
+      final products = parseProducts((await state.load('/api/v1/store/products')).data);
+      final product = products.where((p) => p.id == productId).firstOrNull;
+      if (!mounted) return;
+      if (product == null) {
+        notice(context, 'This product is no longer in the store.', kind: ToastKind.error);
+        return;
+      }
+      openPage(context, ProductPage(product: product, state: state));
+    } catch (_) {
+      if (mounted) notice(context, 'Could not open the store. Check your connection.', kind: ToastKind.error);
+    }
   }
 
   Future<void> _refresh() async {
@@ -570,6 +645,8 @@ class _MatchPageState extends State<MatchPage> {
         'Tie-break won by ${_name(asStr(p['team_id']))}',
       'compensation' =>
         'Correction${asStr(p['reason']).isEmpty ? '' : ': ${asStr(p['reason'])}'}',
+      'status_change' =>
+        'Match ${asStr(p['status'])}${asStr(p['reason']).isEmpty ? '' : ': ${asStr(p['reason'])}'}',
       final t => humanize(t),
     };
   }
@@ -600,38 +677,20 @@ class _MatchPageState extends State<MatchPage> {
           'You are offline. "$label" is saved on this phone as pending sync and will be sent automatically.',
         );
       } else {
-        notice(context, done);
+        notice(context, done, kind: ToastKind.success);
         await _refresh();
       }
     } on ApiException catch (e) {
-      if (mounted) notice(context, e.message);
+      if (mounted) notice(context, e.message, kind: ToastKind.error);
     } catch (_) {
-      if (mounted) notice(context, 'That could not be saved. Please try again.');
+      if (mounted) notice(context, 'That could not be saved. Please try again.', kind: ToastKind.error);
     } finally {
       if (mounted) setState(() => busy = false);
     }
   }
 
-  Future<bool> _confirm(String title, String message, String yes) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(yes),
-          ),
-        ],
-      ),
-    );
-    return ok == true;
-  }
+  Future<bool> _confirm(String title, String message, String yes) =>
+      confirmIos(context, title: title, message: message, confirm: yes);
 
   Future<void> _addScore() async {
     final homeId = asStr(asMap(data['home'])['team_id']);
@@ -657,7 +716,7 @@ class _MatchPageState extends State<MatchPage> {
     }
     await _submit(
       {
-        'event_id': newId('m'),
+        'event_id': newId(),
         'match_id': widget.matchId,
         'type': 'score',
         'payload': {'team_id': teamId, 'event_type': eventType},
@@ -680,32 +739,19 @@ class _MatchPageState extends State<MatchPage> {
       notice(context, 'There are no score events that can be corrected.');
       return;
     }
-    final picked = await showModalBottomSheet<Map<String, dynamic>>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(ctx).height * .7,
+    final picked = await showIosPicker<Map<String, dynamic>>(
+      context,
+      title: 'Which event is wrong?',
+      message: 'It stays in the timeline, struck through, and no longer counts.',
+      options: [
+        for (final e in events)
+          PickerOption(
+            value: e,
+            label: _eventTitle(e),
+            subtitle: 'Event #${asStr(e['sequence'])}',
+            icon: _eventIcon(asStr(e['type'])),
           ),
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            children: [
-              const SectionHeading('Which event is wrong?'),
-              for (final e in events)
-                ListTile(
-                  minTileHeight: 56,
-                  leading: Icon(_eventIcon(asStr(e['type'])), color: ocean),
-                  title: Text(_eventTitle(e)),
-                  subtitle: Text('Event #${asStr(e['sequence'])}'),
-                  onTap: () => Navigator.pop(ctx, e),
-                ),
-            ],
-          ),
-        ),
-      ),
+      ],
     );
     if (picked != null && mounted) await _compensate(picked);
   }
@@ -713,32 +759,23 @@ class _MatchPageState extends State<MatchPage> {
   Future<void> _compensate(Map<String, dynamic> event) async {
     final reasonCtrl = TextEditingController(text: 'Scoring correction');
     final label = _eventTitle(event);
-    final ok = await showDialog<bool>(
+    final ok = await showCupertinoDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      barrierDismissible: true,
+      builder: (ctx) => CupertinoAlertDialog(
         title: const Text('Correct this event?'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '"$label" will be cancelled by a correction. It stays in the timeline, struck through, and no longer counts.',
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: reasonCtrl,
-                decoration: const InputDecoration(labelText: 'Reason'),
-              ),
-            ],
-          ),
+        content: Column(
+          children: [
+            Text('"$label" will be cancelled by a correction. It stays in the timeline, struck through, '
+                'and no longer counts.'),
+            const SizedBox(height: 12),
+            CupertinoTextField(controller: reasonCtrl, placeholder: 'Reason', autofocus: true),
+          ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
+          CupertinoDialogAction(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Correct'),
           ),
@@ -752,7 +789,7 @@ class _MatchPageState extends State<MatchPage> {
     if (ok != true || !mounted) return;
     await _submit(
       {
-        'event_id': newId('m'),
+        'event_id': newId(),
         'match_id': widget.matchId,
         'type': 'compensation',
         'payload': {'compensates': asStr(event['event_id']), 'reason': reason},
@@ -768,7 +805,7 @@ class _MatchPageState extends State<MatchPage> {
     }
     await _submit(
       {
-        'event_id': newId('m'),
+        'event_id': newId(),
         'match_id': widget.matchId,
         'type': type,
         'payload': <String, dynamic>{},
@@ -806,13 +843,18 @@ class _MatchPageState extends State<MatchPage> {
               ?_pinned(),
               if (canScore) _scoringDesk(context),
               ChoiceRow(
-                items: const ['Timeline', 'Match info'],
+                items: const ['Timeline', 'Lineup', 'Telemetry', 'Match info'],
                 value: tab,
                 light: true,
                 onChanged: (v) => setState(() => tab = v),
               ),
-              if (tab == 'Timeline')
-                _timeline(context, pending)
+              if (tab == 'Timeline') ...[
+                _timeline(context, pending),
+                const TacticalLineupCard(),
+              ] else if (tab == 'Lineup')
+                const TacticalLineupCard()
+              else if (tab == 'Telemetry')
+                const MatchTelemetryCard()
               else
                 _info(),
             ],
@@ -857,12 +899,12 @@ class _MatchPageState extends State<MatchPage> {
     final p = data['pinned_product'];
     if (p is! Map) return null;
     final product = asMap(p);
-    return GlassCard(
+    return Pressable(
+      onTap: () => _openPinned(asStr(product['product_id'])),
+      semanticLabel: 'Featured product ${asStr(product['name'])}. Open in store.',
+      child: GlassCard(
       padding: const EdgeInsets.all(16),
-      child: Semantics(
-        container: true,
-        label: 'Featured product',
-        child: Row(
+      child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(10),
@@ -899,6 +941,7 @@ class _MatchPageState extends State<MatchPage> {
                 ],
               ),
             ),
+            const Icon(Icons.chevron_right, color: muted, semanticLabel: 'Open'),
           ],
         ),
       ),
@@ -1072,7 +1115,7 @@ class _MatchPageState extends State<MatchPage> {
         const SectionHeading('Match information'),
         DetailRow('Home', _name(asStr(asMap(data['home'])['team_id']))),
         DetailRow('Away', _name(asStr(asMap(data['away'])['team_id']))),
-        DetailRow('Sport', humanize(asStr(data['sport_id'], '—'))),
+        DetailRow('Sport', asStr(data['sport_name'], humanize(asStr(data['sport_id'], '—')))),
         DetailRow('League', humanize(asStr(data['league_id'], '—'))),
         DetailRow('Scheduled', formatDateTime(asStr(data['scheduled_at']))),
         DetailRow('Status', _statusLabel(asStr(data['status']))),
@@ -1139,25 +1182,28 @@ class _ScoreSheetState extends State<_ScoreSheet> {
             const SectionHeading('New score event'),
             const Text('Team'),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final (id, name) in widget.teams)
-                  ChoiceChip(
-                    label: Text(name),
-                    selected: team == id,
-                    onSelected: (_) => setState(() => team = id),
-                  ),
-              ],
+            SizedBox(
+              width: double.infinity,
+              child: CupertinoSlidingSegmentedControl<String>(
+                groupValue: team,
+                children: {
+                  for (final (id, name) in widget.teams)
+                    id: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ),
+                },
+                onValueChanged: (v) => setState(() => team = v ?? team),
+              ),
             ),
             const SizedBox(height: 16),
             const Text('Event'),
             const SizedBox(height: 8),
             if (widget.eventTypes.isEmpty)
-              TextField(
+              CupertinoTextField(
                 controller: custom,
-                decoration: const InputDecoration(labelText: 'Event type'),
+                placeholder: 'Event type, e.g. goal',
+                padding: const EdgeInsets.all(14),
                 onChanged: (_) => setState(() {}),
               )
             else
@@ -1405,7 +1451,8 @@ class _StandingsPageState extends State<StandingsPage> {
       cells: [
         DataCell(
           Semantics(
-            label: 'Rank $rank, $name, $label',
+            label: 'Rank $rank, $name, $label. Opens club.',
+            button: true,
             excludeSemantics: true,
             child: Row(
               children: [
@@ -1459,6 +1506,7 @@ class _StandingsPageState extends State<StandingsPage> {
               ],
             ),
           ),
+          onTap: () => openPage(context, ClubPage(state: widget.state, clubId: asStr(r['team_id']))),
         ),
         for (final n in [r['played'], r['won'], r['drawn'], r['lost']])
           DataCell(Text('${asInt(n)}')),

@@ -1,6 +1,7 @@
 """FR-1.1 / spec 5.6: sports are pure data. Nothing in the domain branches on a
 sport id or event name; scoring reads `scoring_model` + `scoring_events`."""
 import re
+import uuid
 
 from fastapi import APIRouter, Depends, Request
 from psycopg.types.json import Jsonb
@@ -186,16 +187,12 @@ async def create_sport(request: Request):
 
 # --------------------------------------------------------------------------- mobile routes
 
-def _insert_sport(config: dict) -> dict:
-    with pool.connection() as conn:
-        inserted = conn.execute(
-            "INSERT INTO sports (sport_id, config) VALUES (%s, %s) ON CONFLICT (sport_id) DO NOTHING RETURNING sport_id",
-            (config["sport_id"], Jsonb(config)),
-        ).fetchone()
-    if not inserted:
-        raise ApiError(409, "SPORT_EXISTS", f"Sport {config['sport_id']} already exists",
-                       {"sport_id": config["sport_id"]})
-    return {"sport_id": config["sport_id"], "status": "created", "config": config}
+RULE_EDITORS = ("super_admin", "league_organizer")
+
+
+def _same_name(conn, name: str, except_id: str | None = None):
+    return conn.execute("SELECT sport_id FROM sports WHERE lower(config->>'name') = lower(%s) AND sport_id <> %s",
+                        (name.strip(), except_id or "")).fetchone()
 
 
 @router.get("/api/v1/sports")
@@ -207,7 +204,52 @@ def list_sports(user: dict = Depends(auth.current_user)):
 
 @router.post("/api/v1/sports", status_code=201)
 async def create_sport_mobile(request: Request, user: dict = Depends(auth.current_user)):
-    """Add a sport from the app (platform admin / league organizer): same JSON rules as 5.6."""
-    if user.get("role") not in ("super_admin", "league_organizer"):
+    """Add a sport from the app (platform admin / league organizer): same JSON rules as 5.6. The server
+    assigns sport_id (a UUID); the app never invents ids. Names are unique (case-insensitive)."""
+    if user.get("role") not in RULE_EDITORS:
         raise auth.forbidden("Only admins and league organizers can add sports")
-    return _insert_sport(validate_sport(await read_json(request)))
+    body = await read_json(request)
+    if isinstance(body, dict):
+        body = {**body, "sport_id": str(uuid.uuid4())}
+    config = validate_sport(body)
+    with pool.connection() as conn:
+        if _same_name(conn, config["name"]):
+            raise ApiError(409, "SPORT_EXISTS", f"A sport called {config['name']} already exists",
+                           {"name": config["name"]})
+        conn.execute("INSERT INTO sports (sport_id, config) VALUES (%s, %s)", (config["sport_id"], Jsonb(config)))
+    return {"sport_id": config["sport_id"], "status": "created", "config": config}
+
+
+@router.put("/api/v1/sports/{sport_id}")
+async def update_sport(sport_id: str, request: Request, user: dict = Depends(auth.current_user)):
+    """Edit a sport's rules (scoring events, periods, draws, overtime, tie-breaks, roster rules).
+    Leagues and matches keep the rules they were created with, so finished results never change."""
+    if user.get("role") not in RULE_EDITORS:
+        raise auth.forbidden("Only admins and league organizers can change sport rules")
+    body = await read_json(request)
+    config = validate_sport({**body, "sport_id": sport_id} if isinstance(body, dict) else body)
+    with pool.connection() as conn:
+        get_sport(sport_id, conn)  # 404 SPORT_NOT_FOUND
+        if _same_name(conn, config["name"], except_id=sport_id):
+            raise ApiError(409, "SPORT_EXISTS", f"A sport called {config['name']} already exists",
+                           {"name": config["name"]})
+        conn.execute("UPDATE sports SET config = %s WHERE sport_id = %s", (Jsonb(config), sport_id))
+    return {"sport_id": sport_id, "status": "updated", "config": config}
+
+
+@router.delete("/api/v1/sports/{sport_id}")
+def delete_sport(sport_id: str, user: dict = Depends(auth.current_user)):
+    """Platform admin only. Baseline sports and sports with leagues or matches cannot be deleted."""
+    if user.get("role") != "super_admin":
+        raise auth.forbidden("Only the platform admin can delete sports")
+    with pool.connection() as conn:
+        row = conn.execute("SELECT baseline FROM sports WHERE sport_id = %s FOR UPDATE", (sport_id,)).fetchone()
+        if row is None:
+            raise not_found("SPORT_NOT_FOUND", sport_id=sport_id)
+        used = conn.execute("SELECT 1 FROM scoring_matches WHERE sport_id = %s UNION ALL "
+                            "SELECT 1 FROM scoring_leagues WHERE sport_id = %s LIMIT 1", (sport_id, sport_id)).fetchone()
+        if row["baseline"] or used:
+            raise ApiError(409, "SPORT_IN_USE", "This sport is built in or used by a league, so it cannot be deleted",
+                           {"sport_id": sport_id, "baseline": row["baseline"]})
+        conn.execute("DELETE FROM sports WHERE sport_id = %s", (sport_id,))
+    return {"sport_id": sport_id, "status": "deleted"}

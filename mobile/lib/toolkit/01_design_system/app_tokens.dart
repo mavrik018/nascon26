@@ -69,30 +69,56 @@ abstract final class Motion {
 /// grey/black shadows and keeps elevation subtle. Pass
 /// `Theme.of(context).colorScheme.primary` (or `shadow`) as [tint].
 abstract final class AppShadows {
-  /// Resting cards.
+  /// Resting cards — multi-layered ambient + contact shadow for clear elevation.
   static List<BoxShadow> soft(Color tint) => [
     BoxShadow(
-      color: tint.withValues(alpha: 0.06),
-      blurRadius: 20,
-      offset: const Offset(0, 8),
+      color: const Color(0xFF061B2E).withValues(alpha: 0.16),
+      blurRadius: 22,
+      offset: const Offset(0, 10),
+    ),
+    BoxShadow(
+      color: tint.withValues(alpha: 0.14),
+      blurRadius: 12,
+      offset: const Offset(0, 4),
+    ),
+    BoxShadow(
+      color: const Color(0xFF061B2E).withValues(alpha: 0.08),
+      blurRadius: 3,
+      offset: const Offset(0, 1.5),
     ),
   ];
 
-  /// Hero surfaces and pressed/raised states — lifts rather than darkens.
+  /// Hero surfaces and raised cards — deep 3D elevation with crisp rim definition.
   static List<BoxShadow> lifted(Color tint) => [
     BoxShadow(
-      color: tint.withValues(alpha: 0.10),
-      blurRadius: 28,
-      offset: const Offset(0, 12),
+      color: const Color(0xFF041524).withValues(alpha: 0.24),
+      blurRadius: 32,
+      spreadRadius: 1,
+      offset: const Offset(0, 16),
+    ),
+    BoxShadow(
+      color: tint.withValues(alpha: 0.18),
+      blurRadius: 14,
+      offset: const Offset(0, 6),
+    ),
+    BoxShadow(
+      color: const Color(0xFF041524).withValues(alpha: 0.10),
+      blurRadius: 4,
+      offset: const Offset(0, 2),
     ),
   ];
 
   /// A coloured glow under a filled button or selected chip.
   static List<BoxShadow> glow(Color color) => [
     BoxShadow(
-      color: color.withValues(alpha: 0.30),
-      blurRadius: 20,
-      offset: const Offset(0, 8),
+      color: color.withValues(alpha: 0.36),
+      blurRadius: 22,
+      offset: const Offset(0, 10),
+    ),
+    BoxShadow(
+      color: const Color(0xFF041524).withValues(alpha: 0.14),
+      blurRadius: 6,
+      offset: const Offset(0, 3),
     ),
   ];
 }
