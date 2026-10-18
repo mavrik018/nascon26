@@ -31,6 +31,13 @@ services:
       API_WORKERS: ${API_WORKERS:-8}
       DB_POOL_MAX: ${DB_POOL_MAX:-10}
       MEDIA_API_URL: http://mediamtx:9997
+      # FR-3.2: finished recordings go to S3-compatible storage (MinIO). Unset -> indexed only, no upload.
+      MINIO_URL: ${MINIO_URL:-}
+      MINIO_BUCKET: ${MINIO_BUCKET:-vod}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-}
+    volumes:
+      - recordings:/recordings:ro
     ports:
       - "8080:8080"
     depends_on:
@@ -61,6 +68,7 @@ services:
     image: bluenviron/mediamtx:1.9.1
     volumes:
       - ./infra/mediamtx.yml:/mediamtx.yml:ro
+      - recordings:/recordings
     ports:
       - "1935:1935"
       - "8888:8888"
@@ -111,3 +119,4 @@ services:
 
 volumes:
   pgdata:
+  recordings:

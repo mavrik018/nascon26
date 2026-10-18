@@ -22,5 +22,14 @@ authHTTPExclude:
   - action: metrics
   - action: pprof
 
+# FR-3.2 recording: fMP4 segments into the volume shared with the API, which uploads finished segments to
+# MinIO and indexes them in vod_recordings (api/app/modules/recording.py).
+pathDefaults:
+  record: yes
+  recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+  recordFormat: fmp4
+  recordSegmentDuration: 10s
+  recordDeleteAfter: 24h
+
 paths:
   all_others:

@@ -30,8 +30,17 @@ LAYOUT_MAX = {"solo": 1, "grid_2": 2}
 MAX_PARTICIPANTS = 4
 
 
+SEED_SESSION = {"session_id": "cs-session-101", "host_player_id": "player-alpha-1",
+                "participants": ["player-alpha-1", "player-alpha-2", "player-beta-1", "player-beta-2"],
+                "simulate_host_drop": False, "layout": "grid_4"}
+
+
 def reset(conn, seed: int, body: dict) -> None:
     conn.execute("DELETE FROM costream_sessions")
+    # The spec's example session exists right after reset, so the guest page / app deep link have something to
+    # join. Its stored request key can never equal a real request, so any POST still evaluates it afresh (201).
+    conn.execute("INSERT INTO costream_sessions (session_id, request, response) VALUES (%s, %s, %s)",
+                 (SEED_SESSION["session_id"], "seed:" + canonical(SEED_SESSION), Jsonb(evaluate(SEED_SESSION))))
 
 
 def _validate(body) -> dict:

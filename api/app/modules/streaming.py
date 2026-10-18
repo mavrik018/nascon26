@@ -133,6 +133,9 @@ async def stream_key(request: Request):
     # After commit: cut any live ingest still using a revoked key (FR-3.2: within 2 s).
     for old in superseded:
         kick_publishers(old)
+    if superseded:
+        from . import recording  # FR-3.2: the ended broadcast's segments go to MinIO + the VOD index
+        recording.sync_in_background()
     body = key_view(player_id, label, key, status)
     body["signature"] = sign_day2(key, {"action": action, "player_id": player_id, "status": status,
                                         "stream_key": key})

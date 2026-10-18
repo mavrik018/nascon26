@@ -21,10 +21,10 @@ AREAS = {
 
 # Part II 7.2: the five Phase II modules  (--day2 writes COVERAGE_DAY2.json).
 AREAS_DAY2 = {
-    "streaming": ["streaming.py"],
-    "costream": ["costream.py"],
+    "streaming": ["streaming.py", "recording.py"],
+    "costream": ["costream.py", "hostctl.py"],
     "qr_guest": ["qr_guest.py"],
-    "moderation_dlq": ["moderation_dlq.py"],
+    "moderation_dlq": ["moderation_dlq.py", "notify.py"],
     "observability": ["observability.py"],
 }
 

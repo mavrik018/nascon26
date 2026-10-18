@@ -3,7 +3,7 @@
 **Resume anywhere:** `git pull`, read this file, continue the next unticked row you own. Update your rows +
 "Last updated" and push at least once per window. Laptop 2's detailed instructions: `LAPTOP2_PLAN.md`.
 
-_Last updated: Sun 18 Oct 2026, 12:16 PKT (Laptop 1) — L1 is OUT OF TOKENS until ~13:15; Laptop 2 takes over_
+_Last updated: Sun 18 Oct 2026, 12:41 PKT (Laptop 2) — times are from the laptop clock (`date`)_
 
 ## Hard rules (Day 2 PDF, binding)
 - Freeze 14:00, final push **14:05:00 PKT**. Push in every window: W1 ✅ · W2 ✅ · W3 12:45–13:45 (NOT yet pushed) · W4 13:45–14:05.
@@ -42,6 +42,19 @@ _Last updated: Sun 18 Oct 2026, 12:16 PKT (Laptop 1) — L1 is OUT OF TOKENS unt
 | L2-5 | `tests/appium/test_mobile_deeplink.py` | L2 | ✅ 11:57: **3/3 PASS against L1** (emulator, app → L1 via a forwarder on L2:8080; compose Grid browser → L1). Cross-surface chat reached both the app and the browser in ≤3 s. Cold launch WaitTime 1.26–1.29 s (only the very first launch after a fresh install: 3.1 s). Report in `tests/reports/appium-report.xml` |
 | L2-6 | `.github/workflows/autograde.yml` | L2 | ✅ needs GitHub repo secrets `DAY1_SALT` / `DAY2_SALT` (team sets them in GitHub settings) |
 
+
+## Laptop 2 progress on the handoff (12:41) — all verified on Laptop 2
+- 2 ✅ FR-3.3 / FR-5.2: L1's agent pushed `hostctl.py` + `notify.py` (42aee26) while L2 built the same thing. **L2 kept L1's version** and dropped its own.
+  Re-verified on L2 with the seed + recording: test_day2_hostctl/notify/costream/streaming/recording/store → 128 passed.
+- 3 ✅ `cs-session-101` seeded on reset (stored with a `seed:` request key, so a later POST of the spec body still gets 201).
+- 4 ✅ NFR-2: `uvicorn[standard]==0.34.0` (team approved 12:20). k6 inside the compose network on L2, full profile:
+  **p95 344 ms, 0 failed / 27,643 requests, 1,798 req/s** → `tests/reports/k6-summary.json`.
+- 5 🟡 FR-3.2 `recording.py`: MediaMTX `pathDefaults.record` fMP4 → shared `recordings` volume; the API uploads finished
+  segments to MinIO (stdlib SigV4) + `vod_recordings` index (`GET /api/v1/vod/{key}`, athlete profile `vod`), on key revoke and
+  on `POST /internal/media/recordings/sync`. Set `MINIO_URL=http://172.15.33.178:9000`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` in `.env`.
+  Upload verified against the real MinIO; not run end to end (no ffmpeg on L2, and the MediaMTX image has no shell for hooks).
+- 6 ✅ TRACEABILITY.md Part II table + README Part II section.
+- 7 ✅ (12:40, before the merge above) backend suite **1358 passed, 2 skipped, 0 failed**; COVERAGE_DAY2.json being re-measured after the merge (pushed in W4). Selenium 3/3 on the compose Grid. Stack up healthy (warm).
 
 ## >>> HANDOFF TO LAPTOP 2 (12:16) — remaining work, in priority order <<<
 L1 audit of every Part II FR/NFR vs code (12:05). Done & tested: all /audit/v1/* contracts (5.4–5.9), guest 403, cart merge,
