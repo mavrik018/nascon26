@@ -3,7 +3,7 @@
 **Resume anywhere:** `git pull`, read this file, continue the next unticked row you own. Update your rows +
 "Last updated" and push at least once per window. Laptop 2's detailed instructions: `LAPTOP2_PLAN.md`.
 
-_Last updated: Sun 18 Oct 2026, 11:45 PKT (Laptop 1) — times are from the laptop clock (`date`)_
+_Last updated: Sun 18 Oct 2026, 11:49 PKT (Laptop 2) — times are from the laptop clock (`date`)_
 
 ## Hard rules (Day 2 PDF, binding)
 - Freeze 14:00, final push **14:05:00 PKT**. Push in every window: W1 ✅ · W2 ✅ · W3 12:45–13:45 (NOT yet pushed) · W4 13:45–14:05.
@@ -31,7 +31,7 @@ _Last updated: Sun 18 Oct 2026, 11:45 PKT (Laptop 1) — times are from the lapt
 | 8 | `/metrics` (5 metrics) + `DELETE /audit/v1/privacy/user/{id}` | L1 | ✅ tested |
 | 9 | WebSocket `/ws/matches/{id}` (NFR-1) | L1 | ✅ tested <500 ms |
 | 10 | Compose: redis, mediamtx, selenium hub + 3 nodes | L1 | ✅ grid ready=3; guest HLS read needs no credentials (no 401) since 11:40 |
-| 10b | MinIO + stream recording + VOD index (FR-3.2) | L2 runs MinIO, L1 wires it | ⏳ waiting for L2 (request below) |
+| 10b | MinIO + stream recording + VOD index (FR-3.2) | L2 runs MinIO, L1 wires it | 🟡 MinIO up on L2 (172.15.33.178:9000, bucket `vod`). L1 wires it |
 | 11 | COVERAGE_DAY2.json (measured) | L1 | ✅ streaming 97.3 · costream 98.6 · qr_guest 91.7 · moderation_dlq 97.7 · observability 94.0 — suite 1334 passed, 1 skipped |
 | 12 | TRACEABILITY.md Part II rows + README | L1 | ⏳ next |
 | 13 | Cold start ≤120 s check; `nascon_stream_bitrate_kbps` from MediaMTX | L1 | ⏳ |
@@ -48,6 +48,11 @@ _Last updated: Sun 18 Oct 2026, 11:45 PKT (Laptop 1) — times are from the lapt
   (or `minio.exe server C:\minio-data --console-address :9001`). Create bucket `vod`. Then write here: your LAN IP,
   the exact image name you used, and that `http://<ip>:9000/minio/health/live` returns 200. L1 then sends recordings + VOD index there
   and adds a `minio` service with that image to docker-compose.yml.
+  - **L2 ✅ done (11:49):** MinIO running on Laptop 2. LAN IP **172.15.33.178** (Wi-Fi). S3 API `http://172.15.33.178:9000`, console
+    `http://172.15.33.178:9001`. Image **`alpine/minio:RELEASE.2025-10-15T17-29-55Z`**, container `minio`, `--restart unless-stopped`,
+    data in Docker volume `nascon-minio-data`. Credentials as in the command above. Bucket **`vod`** created (S3 PUT 200, HEAD 200).
+    `http://172.15.33.178:9000/minio/health/live` → **200** (checked from Laptop 2 itself; L1, please curl it once from your side
+    in case the Windows firewall blocks inbound traffic).
 - **L1 → L2:** chat (`/api/v1/chat`, `/api/v1/public/chat/{room}`), costream, QR, moderation are all merged and running on L1 — run k6 + the
   Appium cross-surface test against L1.
 - Done by L1: guest HLS read without credentials (11:40) · tests/reports un-ignored · ci.yml ignores selenium/appium.
