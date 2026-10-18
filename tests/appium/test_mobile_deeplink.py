@@ -60,9 +60,14 @@ def open_link(driver, uri: str) -> float:
     """Cold-open the app on `uri` exactly like the desk audit; returns seconds until it is in the foreground."""
     driver.terminate_app(PACKAGE)
     start = time.monotonic()
-    adb("shell", "am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", uri)
+    out = adb("shell", "am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", uri)
     while time.monotonic() - start < 5:
         if driver.query_app_state(PACKAGE) == FOREGROUND:
+            # `am start -W` reports WaitTime (ms) = intent fired -> activity drawn, measured on the device;
+            # prefer it over our own clock, which also counts adb process start-up and Appium round trips.
+            for line in out.splitlines():
+                if line.startswith("WaitTime:"):
+                    return int(line.split(":")[1]) / 1000
             return time.monotonic() - start
         time.sleep(0.05)
     pytest.fail(f"{PACKAGE} not in the foreground 5 s after {uri}")
