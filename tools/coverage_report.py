@@ -19,12 +19,21 @@ AREAS = {
     "rbac": ["rbac.py"],
 }
 
+# Part II 7.2: the five Phase II modules  (--day2 writes COVERAGE_DAY2.json).
+AREAS_DAY2 = {
+    "streaming": ["streaming.py"],
+    "costream": ["costream.py"],
+    "qr_guest": ["qr_guest.py"],
+    "moderation_dlq": ["moderation_dlq.py"],
+    "observability": ["observability.py"],
+}
 
-def area_coverage(report: dict) -> dict:
+
+def area_coverage(report: dict, areas: dict = AREAS) -> dict:
     files = {Path(name).name: data["summary"] for name, data in report["files"].items()
              if "modules" in Path(name).parts}
     result = {}
-    for area, names in AREAS.items():
+    for area, names in areas.items():
         statements = sum(files[n]["num_statements"] for n in names if n in files)
         covered = sum(files[n]["covered_lines"] for n in names if n in files)
         result[area] = math.floor(1000 * covered / statements) / 10 if statements else 0.0
@@ -33,7 +42,9 @@ def area_coverage(report: dict) -> dict:
 
 if __name__ == "__main__":
     report = json.loads(Path(sys.argv[1]).read_text())
-    figures = area_coverage(report)
+    day2 = "--day2" in sys.argv
+    figures = area_coverage(report, AREAS_DAY2 if day2 else AREAS)
     print(json.dumps(figures))
-    if "--write" in sys.argv:
-        Path(__file__).resolve().parents[1].joinpath("COVERAGE.json").write_text(json.dumps(figures, indent=2) + "\n")
+    if "--write" in sys.argv or day2:
+        name = "COVERAGE_DAY2.json" if day2 else "COVERAGE.json"
+        Path(__file__).resolve().parents[1].joinpath(name).write_text(json.dumps(figures, indent=2) + "\n")
