@@ -132,7 +132,17 @@ class _GuestMatchLivePageState extends State<GuestMatchLivePage> with _Polling {
       label: 'Match Live screen ${widget.matchId}',
       container: true,
       child: Scaffold(
-        appBar: AppBar(title: const Text('Match Live')),
+        appBar: AppBar(
+          title: const Text('Match Live'),
+          actions: [
+            IconButton(
+              key: const Key('show-qr'),
+              tooltip: 'Show QR code for this match',
+              icon: const Icon(Icons.qr_code_2),
+              onPressed: () => showQrSheet(context, widget.state, widget.matchId),
+            ),
+          ],
+        ),
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -721,3 +731,35 @@ class _BroadcastHubPageState extends State<BroadcastHubPage> {
   }
 }
 
+
+
+/// FR-4.1: the dynamic QR for any entity (match / club / player / co-stream), rendered by the server
+/// (GET /audit/v1/qr/{id}/export.png). Its short link stays the same; where it leads follows the live state.
+Future<void> showQrSheet(BuildContext context, AppState state, String entityId) => showModalBottomSheet<void>(
+  context: context,
+  showDragHandle: true,
+  builder: (ctx) => SafeArea(
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Scan to watch', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 12),
+          Image.network(
+            '${state.baseUrl}/audit/v1/qr/$entityId/export.png',
+            width: 240,
+            height: 240,
+            semanticLabel: 'QR code for $entityId',
+            errorBuilder: (_, _, _) => const SizedBox(
+              height: 120,
+              child: Center(child: Text('QR code could not be loaded. Check the connection.')),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SelectableText('nascon://entity/$entityId', style: const TextStyle(fontSize: 13)),
+        ],
+      ),
+    ),
+  ),
+);
