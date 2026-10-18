@@ -3,14 +3,14 @@
 **Resume anywhere:** `git pull`, read this file, continue the next unticked row you own. Update your rows +
 "Last updated" and push at least once per window. Laptop 2's detailed instructions: `LAPTOP2_PLAN.md`.
 
-_Last updated: Sun 18 Oct 2026, 12:30 PKT (Laptop 1)_
+_Last updated: Sun 18 Oct 2026, 11:45 PKT (Laptop 1) — times are from the laptop clock (`date`)_
 
 ## Hard rules (Day 2 PDF, binding)
-- Freeze 14:00, final push **14:05:00 PKT**. Push in every window: W1 ✅ · W2 ✅ · W3 12:45–13:45 · W4 13:45–14:05.
+- Freeze 14:00, final push **14:05:00 PKT**. Push in every window: W1 ✅ · W2 ✅ · W3 12:45–13:45 (NOT yet pushed) · W4 13:45–14:05.
 - Commits descend from Day 1 `11b52ef`; never force-push or rewrite history. Author mavrik018, no co-author lines.
 - **Salts:** only via env in the git-ignored `.env` (`DAY1_SALT=…`, `DAY2_SALT=…`; values from the team, never invented).
   Day 1 code signs with `DAY1_SALT` (`signing.sign`); Day 2 code signs ONLY with `DAY2_SALT` (`signing.sign_day2`). Never mix.
-  Both are set on Laptop 1 (12:25).
+  Both are set on Laptop 1 (11:40).
 - `docker compose up -d --build` healthy ≤120 s; `localhost:4444/status` ≥3 ready nodes; ports 8080, 4444, 4723, 1935, 8888, 8889.
 - Don't fabricate reports/coverage. Backend 80% / frontend 20%.
 
@@ -27,10 +27,10 @@ _Last updated: Sun 18 Oct 2026, 12:30 PKT (Laptop 1)_
 | 4 | `POST /audit/v1/costream/session` + `GET /api/v1/public/costream/{id}` | L1 | ✅ tested |
 | 5 | QR `/audit/v1/qr/{id}`, exports svg/png/pdf, `/q/{code}` 302, PII-free scans | L1 | ✅ tested |
 | 6 | Guest 403 boundary + `/audit/v1/guest/cart-merge` (idempotent, concurrent-safe) | L1 | ✅ tested |
-| 7 | `/audit/v1/moderation/test` + DLQ + `/api/v1/chat` + `/api/v1/public/chat/{room}` | L1 | ✅ tested (merged 12:15) |
+| 7 | `/audit/v1/moderation/test` + DLQ + `/api/v1/chat` + `/api/v1/public/chat/{room}` | L1 | ✅ tested (merged 11:40) |
 | 8 | `/metrics` (5 metrics) + `DELETE /audit/v1/privacy/user/{id}` | L1 | ✅ tested |
 | 9 | WebSocket `/ws/matches/{id}` (NFR-1) | L1 | ✅ tested <500 ms |
-| 10 | Compose: redis, mediamtx, selenium hub + 3 nodes | L1 | ✅ grid ready=3; guest HLS read needs no credentials (no 401) since 12:15 |
+| 10 | Compose: redis, mediamtx, selenium hub + 3 nodes | L1 | ✅ grid ready=3; guest HLS read needs no credentials (no 401) since 11:40 |
 | 10b | MinIO + stream recording + VOD index (FR-3.2) | L2 runs MinIO, L1 wires it | ⏳ waiting for L2 (request below) |
 | 11 | COVERAGE_DAY2.json (measured) | L1 | ✅ streaming 97.3 · costream 98.6 · qr_guest 91.7 · moderation_dlq 97.7 · observability 94.0 — suite 1334 passed, 1 skipped |
 | 12 | TRACEABILITY.md Part II rows + README | L1 | ⏳ next |
@@ -43,14 +43,14 @@ _Last updated: Sun 18 Oct 2026, 12:30 PKT (Laptop 1)_
 | L2-6 | `.github/workflows/autograde.yml` | L2 | ✅ needs GitHub repo secrets `DAY1_SALT` / `DAY2_SALT` (team sets them in GitHub settings) |
 
 ## Requests between laptops
-- **L1 → L2 (MinIO, 12:30) — please do first:** run MinIO on your laptop:
+- **L1 → L2 (MinIO, 11:45) — please do first:** run MinIO on your laptop:
   `docker run -d --name minio -p 9000:9000 -p 9001:9001 -e MINIO_ROOT_USER=nascon -e MINIO_ROOT_PASSWORD=nascon-local-only <your-minio-image> server /data --console-address :9001`
   (or `minio.exe server C:\minio-data --console-address :9001`). Create bucket `vod`. Then write here: your LAN IP,
   the exact image name you used, and that `http://<ip>:9000/minio/health/live` returns 200. L1 then sends recordings + VOD index there
   and adds a `minio` service with that image to docker-compose.yml.
 - **L1 → L2:** chat (`/api/v1/chat`, `/api/v1/public/chat/{room}`), costream, QR, moderation are all merged and running on L1 — run k6 + the
   Appium cross-surface test against L1.
-- Done by L1: guest HLS read without credentials (12:15) · tests/reports un-ignored · ci.yml ignores selenium/appium.
+- Done by L1: guest HLS read without credentials (11:40) · tests/reports un-ignored · ci.yml ignores selenium/appium.
 - Keep compose service name `api` (Grid nodes reach the backend as `http://api:8080`).
 
 ## Known failures / notes
